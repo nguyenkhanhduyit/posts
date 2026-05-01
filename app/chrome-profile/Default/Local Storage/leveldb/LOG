@@ -1,8 +1,3 @@
-2026/05/01-18:04:28.460 3298 Reusing MANIFEST C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile\Default\Local Storage\leveldb/MANIFEST-000001
-2026/05/01-18:04:28.471 3298 Recovering log #61
-2026/05/01-18:04:28.471 3298 Level-0 table #64: started
-2026/05/01-18:04:28.487 3298 Level-0 table #64: 19224 bytes OK
-2026/05/01-18:04:28.487 3298 Recovering log #64
-2026/05/01-18:04:28.491 3298 Reusing old log C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile\Default\Local Storage\leveldb/000064.log 
-2026/05/01-18:04:28.493 3298 Delete type=0 #61
-2026/05/01-18:04:28.493 3298 Delete type=2 #65
+2026/05/01-18:17:00.918 ad0 Reusing MANIFEST C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile\Default\Local Storage\leveldb/MANIFEST-000001
+2026/05/01-18:17:00.924 ad0 Recovering log #67
+2026/05/01-18:17:00.927 ad0 Reusing old log C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile\Default\Local Storage\leveldb/000067.log 

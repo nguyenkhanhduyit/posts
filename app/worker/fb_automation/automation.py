@@ -560,9 +560,12 @@ def _expand_see_more(post, page: Page) -> None:
 
     Important: avoid clicking other interactive zones (reactions, author info).
     """
-    # IMPORTANT (per latest user requirement):
-    # Click `div[role="button"]` ONLY when its text is "xem thêm" / "see more" (or starts with it).
-    # We still scope to the message body (when present) to avoid footer/UFI buttons.
+    # IMPORTANT:
+    # Facebook often renders "Xem thêm" as a div[role=button][tabindex=0] with a very stable class
+    # (SEE_MORE_BUTTON_CLASS), while the visible text can be in descendants.
+    # Strategy:
+    # 1) Prefer exact class match (most reliable for this account/layout).
+    # 2) Fallback to role=button by text within message scope.
 
     def _click_all_see_more_in_post() -> int:
         """
@@ -573,7 +576,7 @@ def _expand_see_more(post, page: Page) -> None:
         try:
             return int(
                 post.evaluate(
-                    """(root) => {
+                    """(root, exactCls) => {
                       // NOTE: run in the context of the post element itself.
                       // Using post.evaluate ensures `root` is a real DOM element (Locator -> ElementHandle issues).
                       if (!root) return 0;
@@ -582,6 +585,7 @@ def _expand_see_more(post, page: Page) -> None:
                         const x = normalize(t);
                         return x === 'xem thêm' || x === 'see more' || x.startsWith('xem thêm') || x.startsWith('see more');
                       };
+                      const normCls = (s) => (s || '').trim().replace(/\\s+/g,' ');
                       const isVisibleEnough = (el) => {
                         try {
                           const st = getComputedStyle(el);
@@ -597,7 +601,33 @@ def _expand_see_more(post, page: Page) -> None:
                       // Prefer scoping to message body to avoid footer/UFI buttons.
                       const msg = root.querySelector('div[data-ad-preview="message"]');
                       const scope = msg || root;
-                      const uniq = Array.from(scope.querySelectorAll('div[role="button"][tabindex="0"],div[role="button"]')).slice(0, 2500);
+                      const wantClass = normCls(exactCls || '');
+
+                      // 1) Preferred: exact class match inside scope.
+                      const exact = wantClass
+                        ? Array.from(scope.querySelectorAll('div[role="button"][tabindex="0"],div[role="button"]'))
+                            .filter(el => {
+                              try {
+                                const c = normCls(el.getAttribute('class'));
+                                if (c !== wantClass) return false;
+                                const t = normalize(el.innerText || el.textContent || '');
+                                return isSeeMoreText(t);
+                              } catch (e) { return false; }
+                            })
+                            .slice(0, 25)
+                        : [];
+
+                      // 2) Fallback: role button by text.
+                      const byText = Array.from(scope.querySelectorAll('div[role="button"][tabindex="0"],div[role="button"]'))
+                        .filter(el => {
+                          try {
+                            const t = normalize(el.innerText || el.textContent || '');
+                            return isSeeMoreText(t);
+                          } catch (e) { return false; }
+                        })
+                        .slice(0, 60);
+
+                      const uniq = (exact.length ? exact : byText).slice(0, 60);
 
                       let clicked = 0;
                       for (const el of uniq) {
@@ -649,6 +679,7 @@ def _expand_see_more(post, page: Page) -> None:
                       }
                       return clicked;
                     }""",
+                    SEE_MORE_BUTTON_CLASS,
                 )
             )
         except Exception:
@@ -666,30 +697,8 @@ def _expand_see_more(post, page: Page) -> None:
                         const x = normalize(t);
                         return x === 'xem thêm' || x === 'see more' || x.startsWith('xem thêm') || x.startsWith('see more');
                       };
-                      const parseTokens = (cls) => normalize(cls).split(' ').filter(Boolean);
-                      const hasAllTokens = (el, tokens) => {
-                        try {
-                          if (!tokens || tokens.length === 0) return false;
-                          const cl = el.classList;
-                          if (!cl) return false;
-                          for (const t of tokens) {
-                            if (!cl.contains(t)) return false;
-                          }
-                          return true;
-                        } catch (e) { return false; }
-                      };
-                      const matchScore = (el, tokens) => {
-                        try {
-                          if (!tokens || tokens.length === 0) return 0;
-                          const cl = el.classList;
-                          if (!cl) return 0;
-                          let s = 0;
-                          for (const t of tokens) {
-                            if (cl.contains(t)) s++;
-                          }
-                          return s;
-                        } catch (e) { return 0; }
-                      };
+                      const normCls = (s) => (s || '').trim().replace(/\\s+/g,' ');
+                      const wantClass = normCls(exactCls || '');
                       const isVisibleEnough = (el) => {
                         try {
                           const st = getComputedStyle(el);
@@ -702,36 +711,20 @@ def _expand_see_more(post, page: Page) -> None:
                         } catch (e) { return false; }
                       };
                       let c = 0;
-                      const all = Array.from(root.querySelectorAll('div,span,a')).slice(0, 1600);
-                      const wantTokens = exactCls ? parseTokens(exactCls) : [];
+                      const msg = root.querySelector('div[data-ad-preview="message"]');
+                      const scope = msg || root;
+                      const all = Array.from(scope.querySelectorAll('div[role="button"],span[role="button"],button,a[role="button"]')).slice(0, 1200);
                       for (const el of all) {
                         try {
                           if (!el || !el.isConnected) continue;
-                          // If exact class exists, treat it as a "see more" even if text is on descendants.
-                          let ok = false;
-                          if (wantTokens.length > 0) {
-                            const score = matchScore(el, wantTokens);
-                            const need = Math.max(10, Math.floor(wantTokens.length * 0.6));
-                            if (score >= need || hasAllTokens(el, wantTokens)) ok = true;
+                          const t = normalize(el.innerText || el.textContent || '');
+                          if (!isSeeMoreText(t)) continue;
+                          if (!isVisibleEnough(el)) continue;
+                          if (wantClass) {
+                            const cls = normCls(el.getAttribute('class'));
+                            if (cls !== wantClass) continue;
                           }
-                          const t = (el.innerText || el.textContent || '');
-                          if (isSeeMoreText(t)) ok = true;
-                          if (!ok) continue;
-                          // Prefer counting the real click target when wrapper has class.
-                          let target = el;
-                          try {
-                            const role = (el.getAttribute('role') || '').toLowerCase();
-                            if (role !== 'button') {
-                              const anc = el.closest ? el.closest('[role="button"]') : null;
-                              if (anc) target = anc;
-                              else {
-                                const child = el.querySelector ? el.querySelector('[role="button"]') : null;
-                                if (child) target = child;
-                              }
-                            }
-                          } catch (e) {}
-                          if (!isVisibleEnough(target)) continue;
-                          c++;
+                          c += 1;
                         } catch (e) {}
                       }
                       return c;
@@ -1259,12 +1252,15 @@ def _wait_posts_present(page: Page, log: Callable[[str, str], None], timeout_s: 
             ok = bool(
                 page.evaluate(
                     """() => {
-                      const main = document.querySelector('div[role="main"]');
+                      const main = document.querySelector('[role="main"]') || document.querySelector('div[role="feed"]') || document.body;
                       if (!main) return false;
                       // If FB has rendered article-like units, we consider "posts present".
                       const nodes = Array.from(
                         main.querySelectorAll('[role="article"],div[role="article"],article,div[data-pagelet*="FeedUnit_"],div[data-pagelet],div[data-ad-preview]')
                       );
+                      // Fast path: aria-posinset is a strong signal results are present.
+                      const pos = main.querySelectorAll('[aria-posinset]').length;
+                      if (pos > 0) return true;
                       if (nodes.length <= 0) return false;
 
                       // Avoid pure skeleton screens: if main has only progressbars / busy states, keep waiting.
@@ -1777,9 +1773,9 @@ def capture_posts(
             ok = False
         if ok:
             return
-        # light recovery: small scroll + reload once
+        # light recovery: small scroll + extra wait (avoid reload loops)
         try:
-            log("capture", "No posts detected yet. Trying light scroll + reload…", "WARN")
+            log("capture", "No posts detected yet. Trying light scroll + extra wait…", "WARN")
         except Exception:
             pass
         try:
@@ -1797,15 +1793,11 @@ def capture_posts(
         except Exception:
             pass
         try:
-            page.reload(wait_until="domcontentloaded", timeout=60_000)
-        except Exception:
-            pass
-        try:
-            ok2 = _wait_posts_present(page, log, timeout_s=18.0)
+            ok2 = _wait_posts_present(page, log, timeout_s=28.0)
         except Exception:
             ok2 = False
         if not ok2:
-            raise ElementTimeout("No posts rendered on search results (after wait + reload).")
+            raise ElementTimeout("No posts rendered on search results (after wait + extra wait).")
 
     _wait_posts_present_or_fail()
 
@@ -2397,7 +2389,7 @@ def capture_posts(
                         )
                     except Exception:
                         pass
-                    _scroll_to_top_results()
+                    # Avoid aggressive top-forcing (can look like scroll up/down). Just ensure first result is visible.
                     _scroll_first_result_into_view()
 
             now = time.time()
@@ -2423,6 +2415,19 @@ def capture_posts(
                     stall_rounds += 1
                 else:
                     stall_rounds = 0
+
+                # End-of-results detection: if we already have a max posinset in DOM and we keep failing
+                # to render the next one without any scrollHeight growth, stop instead of reload-looping.
+                try:
+                    _mn, _mx = _posinset_range_hint()
+                except Exception:
+                    _mn, _mx = (None, None)
+                if _mx is not None and want_pos > int(_mx) and stall_rounds >= 8:
+                    try:
+                        log("capture", f"Reached end of results (maxPos={_mx}). Stopping capture loop.", "INFO")
+                    except Exception:
+                        pass
+                    break
 
                 # Give FB time to lazy-load more results before forcing reload.
                 try:
