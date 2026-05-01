@@ -48,6 +48,7 @@ class RunParams:
     max_posts: int
     delay_min_sec: float
     delay_max_sec: float
+    save_html: bool = True
 
 
 RECENT_POSTS_FILTERS = (
@@ -126,10 +127,43 @@ def _detect_checkpoint(page: Page) -> None:
     if any(x in url for x in ["checkpoint", "two_step_verification", "authentication"]):
         raise CaptchaOrCheckpointDetected(f"Security challenge detected by URL: {page.url}")
     try:
-        body = page.locator("body")
-        txt = body.inner_text(timeout=1500)
-        if re.search(r"(captcha|i'm not a robot|xác minh|verify|reCAPTCHA)", txt, flags=re.I):
-            raise CaptchaOrCheckpointDetected("Captcha/Verify text detected in page")
+        # Avoid scanning full body text (can produce false positives on FB search pages).
+        evidence = page.evaluate(
+            """() => {
+              try {
+                const url = location.href || '';
+                const title = document.title || '';
+                const hasRecaptcha = !!document.querySelector('iframe[src*="recaptcha"], iframe[title*="recaptcha" i], div.g-recaptcha');
+                const hasCaptchaInput = !!document.querySelector('input[name*="captcha" i], input[id*="captcha" i], input[aria-label*="captcha" i]');
+                const hasCheckpointForm = !!document.querySelector('form[action*="checkpoint"], input[name="approvals_code"], input[name="code"]');
+                const dialogs = Array.from(document.querySelectorAll('[role="dialog"]')).slice(0, 20);
+                const norm = (s) => (s || '').replace(/\\s+/g,' ').trim().toLowerCase();
+                const hit = (s) => {
+                  const t = norm(s);
+                  if (!t) return '';
+                  const keys = ['captcha', \"i'm not a robot\", 'recaptcha', 'xác minh', 'verify', 'security check', 'checkpoint'];
+                  for (const k of keys) if (t.includes(k)) return k;
+                  return '';
+                };
+                let dialogHit = '';
+                let dialogSnippet = '';
+                for (const d of dialogs) {
+                  const k = hit(d.innerText || d.textContent || '');
+                  if (k) { dialogHit = k; dialogSnippet = norm(d.innerText || d.textContent || '').slice(0, 220); break; }
+                }
+                return { url, title, hasRecaptcha, hasCaptchaInput, hasCheckpointForm, dialogHit, dialogSnippet };
+              } catch (e) {
+                return { url: '', title: '', hasRecaptcha: false, hasCaptchaInput: false, hasCheckpointForm: false, dialogHit: '', dialogSnippet: '' };
+              }
+            }"""
+        ) or {}
+
+        strong = bool(evidence.get("hasRecaptcha")) or bool(evidence.get("hasCaptchaInput")) or bool(evidence.get("hasCheckpointForm")) or bool(evidence.get("dialogHit"))
+        if strong:
+            msg = f"Checkpoint/Captcha detected. url={evidence.get('url') or page.url} title={evidence.get('title') or ''}"
+            if evidence.get("dialogHit"):
+                msg += f" dialogHit={evidence.get('dialogHit')} dialogSnippet={evidence.get('dialogSnippet')}"
+            raise CaptchaOrCheckpointDetected(msg)
     except PWTimeoutError:
         return
 
@@ -617,17 +651,47 @@ def _expand_see_more(post, page: Page) -> None:
                             .slice(0, 25)
                         : [];
 
-                      // 2) Fallback: role button by text.
-                      const byText = Array.from(scope.querySelectorAll('div[role="button"][tabindex="0"],div[role="button"]'))
-                        .filter(el => {
-                          try {
-                            const t = normalize(el.innerText || el.textContent || '');
-                            return isSeeMoreText(t);
-                          } catch (e) { return false; }
-                        })
-                        .slice(0, 60);
+                      // 2) Fallback: find any node containing "xem thêm/see more" then walk up to a clickable ancestor.
+                      const findClickable = (node) => {
+                        try {
+                          let cur = node;
+                          for (let i = 0; i < 8 && cur; i++) {
+                            const tag = (cur.tagName || '').toLowerCase();
+                            const role = (cur.getAttribute && cur.getAttribute('role')) || '';
+                            if (tag === 'button' || tag === 'a') return cur;
+                            if (role === 'button' || role === 'menuitem') return cur;
+                            if (cur.getAttribute && cur.getAttribute('tabindex') === '0') return cur;
+                            cur = cur.parentElement;
+                          }
+                        } catch (e) {}
+                        return null;
+                      };
 
-                      const uniq = (exact.length ? exact : byText).slice(0, 60);
+                      const nodesWithText = Array.from(scope.querySelectorAll('div,span,a,button'))
+                        .filter(n => {
+                          try { return isSeeMoreText(n.innerText || n.textContent || ''); } catch (e) { return false; }
+                        })
+                        .slice(0, 220);
+
+                      const byText = [];
+                      for (const n of nodesWithText) {
+                        const c = findClickable(n);
+                        if (c) byText.push(c);
+                      }
+
+                      // Dedup while preserving order
+                      const seen = new Set();
+                      const uniq = [];
+                      for (const el of (exact.length ? exact : byText)) {
+                        try {
+                          if (!el || !el.isConnected) continue;
+                          const k = el;
+                          if (seen.has(k)) continue;
+                          seen.add(k);
+                          uniq.push(el);
+                          if (uniq.length >= 60) break;
+                        } catch (e) {}
+                      }
 
                       let clicked = 0;
                       for (const el of uniq) {
@@ -2346,6 +2410,74 @@ def capture_posts(
         except Exception:
             return None, None
 
+    last_mx = None
+    last_mx_change_at = time.time()
+    last_doc_h = None
+    last_doc_h_change_at = time.time()
+    last_primary_sh = None
+    last_primary_sh_change_at = time.time()
+
+    def _end_marker_present() -> bool:
+        try:
+            return bool(
+                page.evaluate(
+                    """() => {
+                      try {
+                        const norm = (s) => (s || '').replace(/\\s+/g,' ').trim().toLowerCase();
+                        const t = norm(document.body ? (document.body.innerText || '') : '');
+                        if (!t) return false;
+                        const keys = [
+                          'không còn kết quả', 'khong con ket qua',
+                          'không tìm thấy', 'khong tim thay',
+                          'no more results', 'no results found', 'end of results'
+                        ];
+                        return keys.some(k => t.includes(k));
+                      } catch (e) { return false; }
+                    }"""
+                )
+            )
+        except Exception:
+            return False
+
+    def _at_bottom_hint() -> bool:
+        try:
+            d = _scroll_diag() or {}
+            p_top = float(d.get("primaryTop") or 0.0)
+            p_h = float(d.get("primaryH") or 0.0)
+            p_sh = float(d.get("primarySH") or 0.0)
+            if p_sh > 0 and p_h > 0:
+                return (p_top + p_h) >= (p_sh - 220.0)
+            y = float(d.get("y") or 0.0)
+            vh = float(d.get("vh") or 0.0)
+            doc_h = float(d.get("docH") or 0.0)
+            if doc_h > 0 and vh > 0:
+                return (y + vh) >= (doc_h - 220.0)
+            return False
+        except Exception:
+            return False
+
+    def _track_heights() -> None:
+        nonlocal last_doc_h, last_doc_h_change_at, last_primary_sh, last_primary_sh_change_at
+        try:
+            d = _scroll_diag() or {}
+            doc_h = float(d.get("docH") or 0.0)
+            p_sh = float(d.get("primarySH") or 0.0)
+        except Exception:
+            doc_h = 0.0
+            p_sh = 0.0
+        now = time.time()
+        if last_doc_h is None:
+            last_doc_h = doc_h
+            last_doc_h_change_at = now
+        elif abs(doc_h - float(last_doc_h or 0.0)) >= 40.0:
+            last_doc_h = doc_h
+            last_doc_h_change_at = now
+        if last_primary_sh is None:
+            last_primary_sh = p_sh
+            last_primary_sh_change_at = now
+        elif abs(p_sh - float(last_primary_sh or 0.0)) >= 40.0:
+            last_primary_sh = p_sh
+            last_primary_sh_change_at = now
     try:
         while True:
             _detect_checkpoint(page)
@@ -2392,15 +2524,8 @@ def capture_posts(
                     # Avoid aggressive top-forcing (can look like scroll up/down). Just ensure first result is visible.
                     _scroll_first_result_into_view()
 
-            now = time.time()
-            if now - last_saved_at >= 140.0:
-                log("capture", "No saved screenshots for too long. Reloading to recover…")
-                try:
-                    page.reload(wait_until="domcontentloaded", timeout=60_000)
-                    _wait_posts_present_or_fail()
-                except Exception:
-                    pass
-                last_saved_at = time.time()
+            # IMPORTANT: do NOT auto reload here.
+            # If we stall, end-of-results / stall logic below will decide when to stop.
 
             want_pos = last_pos + 1
             total_txt = "∞" if unlimited else str(params.max_posts)
@@ -2422,6 +2547,43 @@ def capture_posts(
                     _mn, _mx = _posinset_range_hint()
                 except Exception:
                     _mn, _mx = (None, None)
+
+                # Track max posinset changes to detect "true end" even if scrolling still reports movement.
+                try:
+                    if _mx is not None and (_mx != last_mx):
+                        last_mx = int(_mx)
+                        last_mx_change_at = time.time()
+                except Exception:
+                    pass
+
+                _track_heights()
+
+                # Strong end-of-results detection (unlimited):
+                # stop only when we're beyond maxPos AND things have been stable for a while AND we're at bottom (or FB shows an end marker).
+                if unlimited and _mx is not None and want_pos > int(_mx):
+                    stable_for_s = min(
+                        time.time() - float(last_mx_change_at or 0.0),
+                        time.time() - float(last_doc_h_change_at or 0.0),
+                        time.time() - float(last_primary_sh_change_at or 0.0),
+                    )
+                    if stable_for_s >= 22.0 and (_at_bottom_hint() or _end_marker_present()):
+                        try:
+                            log(
+                                "capture",
+                                f"Reached end of results (maxPos={_mx}, stable~{int(stable_for_s)}s, atBottom={_at_bottom_hint()}). Stopping.",
+                                "INFO",
+                            )
+                        except Exception:
+                            pass
+                        break
+
+                # Fallback: if we are past maxPos and maxPos hasn't changed for a while, stop (older heuristic).
+                if unlimited and _mx is not None and want_pos > int(_mx) and (time.time() - last_mx_change_at) >= 35.0:
+                    try:
+                        log("capture", f"Reached stable end of results (maxPos={_mx}, stable>=35s). Stopping.", "INFO")
+                    except Exception:
+                        pass
+                    break
                 if _mx is not None and want_pos > int(_mx) and stall_rounds >= 8:
                     try:
                         log("capture", f"Reached end of results (maxPos={_mx}). Stopping capture loop.", "INFO")
@@ -2444,24 +2606,8 @@ def capture_posts(
                         stall_rounds = 0
                         continue
 
-                # Only reload when truly stuck for a while and avoid reload loops.
-                if (
-                    stall_rounds >= 14
-                    and (time.time() - last_reload_at) >= 70.0
-                    and (time.time() - last_saved_at) >= 40.0
-                ):
-                    log(
-                        "capture",
-                        f"Stalled waiting for posinset={want_pos}. Reloading (avoid infinite stall). diag={_scroll_diag()}",
-                        "WARN",
-                    )
-                    last_reload_at = time.time()
-                    try:
-                        page.reload(wait_until="domcontentloaded", timeout=60_000)
-                        _wait_posts_present_or_fail()
-                    except Exception:
-                        pass
-                    stall_rounds = 0
+                # IMPORTANT: do NOT auto reload. User requested no auto-reload behavior.
+                # If we truly reach the end, the end-of-results detection above will stop the loop.
                 continue
 
             # Ensure post is in view (DOM-safe) before screenshot.
@@ -2586,69 +2732,68 @@ def capture_posts(
                 pass
 
             final_path = out_dir / f"post_{next_index:03d}.png"
-            # Save lightweight HTML linking screenshot -> post permalink (per user requirement).
-            dom_path = out_dir / f"post_{next_index:03d}.html"
-            try:
-                # Try to extract a stable permalink-like URL from within the post DOM.
-                # Keep it best-effort and fast; do NOT block capture if missing.
-                href = ""
+            if bool(getattr(params, "save_html", True)):
+                # Optional: save lightweight HTML next to screenshot.
+                dom_path = out_dir / f"post_{next_index:03d}.html"
                 try:
-                    href = (
-                        post.evaluate(
-                            """(el) => {
-                              try {
-                                if (!el) return '';
-                                const a = el.querySelector('a[href*="story_fbid"],a[href*="/posts/"],a[href*="/permalink/"],a[href*="permalink.php"],a[href*="/story.php"]');
-                                const h = a ? (a.getAttribute('href') || '') : '';
-                                return (h || '').trim();
-                              } catch (e) { return ''; }
-                            }"""
-                        )
-                        or ""
-                    )
-                except Exception:
+                    # Try to extract a stable permalink-like URL from within the post DOM.
                     href = ""
+                    try:
+                        href = (
+                            post.evaluate(
+                                """(el) => {
+                                  try {
+                                    if (!el) return '';
+                                    const a = el.querySelector('a[href*="story_fbid"],a[href*="/posts/"],a[href*="/permalink/"],a[href*="permalink.php"],a[href*="/story.php"]');
+                                    const h = a ? (a.getAttribute('href') || '') : '';
+                                    return (h || '').trim();
+                                  } catch (e) { return ''; }
+                                }"""
+                            )
+                            or ""
+                        )
+                    except Exception:
+                        href = ""
 
-                try:
-                    from urllib.parse import urljoin
-                except Exception:
-                    urljoin = None  # type: ignore
+                    try:
+                        from urllib.parse import urljoin
+                    except Exception:
+                        urljoin = None  # type: ignore
 
-                permalink = ""
-                if isinstance(href, str):
-                    h = href.strip()
-                    if h:
-                        if urljoin is not None:
-                            permalink = urljoin("https://www.facebook.com/", h)
-                        else:
-                            permalink = h if h.startswith("http") else ("https://www.facebook.com/" + h.lstrip("/"))
+                    permalink = ""
+                    if isinstance(href, str):
+                        h = href.strip()
+                        if h:
+                            if urljoin is not None:
+                                permalink = urljoin("https://www.facebook.com/", h)
+                            else:
+                                permalink = h if h.startswith("http") else ("https://www.facebook.com/" + h.lstrip("/"))
 
-                img_name = final_path.name
-                title = f"post_{next_index:03d}"
-                # Minimal HTML: no FB markup stored, only a link + local image reference.
-                html = (
-                    "<!doctype html>\n"
-                    "<html lang=\"vi\">\n"
-                    "  <head>\n"
-                    "    <meta charset=\"utf-8\" />\n"
-                    "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n"
-                    f"    <title>{title}</title>\n"
-                    "    <style>body{margin:0;background:#0b0f16;color:#e8eefc;font:14px/1.4 system-ui}a{color:#8ab4ff}img{max-width:100%;height:auto;display:block}</style>\n"
-                    "  </head>\n"
-                    "  <body>\n"
-                    f"    <div style=\"padding:12px\">Permalink: "
-                    + (f"<a href=\"{permalink}\" target=\"_blank\" rel=\"noreferrer\">{permalink}</a>" if permalink else "<em>(không tìm thấy)</em>")
-                    + "</div>\n"
-                    + (f"    <a href=\"{permalink}\" target=\"_blank\" rel=\"noreferrer\"><img src=\"{img_name}\" alt=\"{title}\" /></a>\n" if permalink else f"    <img src=\"{img_name}\" alt=\"{title}\" />\n")
-                    + "  </body>\n"
-                    "</html>\n"
-                )
-                dom_path.write_text(html, encoding="utf-8", errors="ignore")
-            except Exception as e:
-                try:
-                    log("capture", f"DOM save failed (ignored): posinset={want_pos} err={e}", "WARN")
-                except Exception:
-                    pass
+                    img_name = final_path.name
+                    title = f"post_{next_index:03d}"
+                    html = (
+                        "<!doctype html>\n"
+                        "<html lang=\"vi\">\n"
+                        "  <head>\n"
+                        "    <meta charset=\"utf-8\" />\n"
+                        "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n"
+                        f"    <title>{title}</title>\n"
+                        "    <style>body{margin:0;background:#0b0f16;color:#e8eefc;font:14px/1.4 system-ui}a{color:#8ab4ff}img{max-width:100%;height:auto;display:block}</style>\n"
+                        "  </head>\n"
+                        "  <body>\n"
+                        f"    <div style=\"padding:12px\">Permalink: "
+                        + (f"<a href=\"{permalink}\" target=\"_blank\" rel=\"noreferrer\">{permalink}</a>" if permalink else "<em>(không tìm thấy)</em>")
+                        + "</div>\n"
+                        + (f"    <a href=\"{permalink}\" target=\"_blank\" rel=\"noreferrer\"><img src=\"{img_name}\" alt=\"{title}\" /></a>\n" if permalink else f"    <img src=\"{img_name}\" alt=\"{title}\" />\n")
+                        + "  </body>\n"
+                        "</html>\n"
+                    )
+                    dom_path.write_text(html, encoding="utf-8", errors="ignore")
+                except Exception as e:
+                    try:
+                        log("capture", f"DOM save failed (ignored): posinset={want_pos} err={e}", "WARN")
+                    except Exception:
+                        pass
             try:
                 post.screenshot(path=str(final_path), timeout=90_000)
             except Exception as e:

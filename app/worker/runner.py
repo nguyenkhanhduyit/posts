@@ -641,6 +641,7 @@ def main() -> None:
                     max_posts=int(job.max_posts),
                     delay_min_sec=float(job.delay_min_sec),
                     delay_max_sec=float(job.delay_max_sec),
+                    save_html=bool(int(getattr(job, "save_html", 1) or 1)),
                 )
 
                 # attempt counter for retryable timeouts
@@ -735,20 +736,83 @@ def main() -> None:
                         job_repo.mark_done(job_id)
 
                 except CaptchaOrCheckpointDetected as e:
-                    jlog("antiblock", str(e), "ERROR")
-                    if job.attempt < job.max_attempts and not should_cancel():
-                        jlog(
-                            "retry",
-                            "Captcha/Checkpoint: sẽ relaunch và thử lại cùng worker (giữ keyword). "
-                            "Nếu vẫn bị chặn, hãy xử lý xác minh trên đúng cửa sổ Chrome của worker đó.",
-                            "WARN",
-                        )
-                        time.sleep(1.0)
-                        relaunch()
-                        job_repo.reset_to_pending_for_retry(job_id, str(e), worker_id=worker_id)
-                        jlog("retry", "Reset job to pending for retry (antiblock).", "WARN")
+                    # NEW: do NOT auto-relaunch/retry. Ask user via UI modal.
+                    msg = str(e)
+                    jlog("antiblock", msg, "ERROR")
+                    try:
+                        job_repo.mark_checkpoint_pending(job_id, msg)
+                    except Exception:
+                        pass
+
+                    # Wait for user decision: "reload" or "continue"
+                    decision = None
+                    t0 = time.time()
+                    while True:
+                        if shutdown_requested:
+                            raise SystemExit(0)
+                        if should_cancel():
+                            jlog("cancel", "Cancelled while waiting for checkpoint decision.", "WARN")
+                            job_repo.mark_cancelled(job_id)
+                            decision = "cancel"
+                            break
+                        st = job_repo.get_checkpoint_state(job_id)
+                        d = str(st.get("decision") or "").strip().lower()
+                        if d in {"reload", "continue"}:
+                            decision = d
+                            break
+                        # heartbeat log while waiting
+                        if int(time.time() - t0) % 10 == 0:
+                            try:
+                                jlog("antiblock", "Waiting for UI decision (reload/continue)…", "WARN")
+                            except Exception:
+                                pass
+                        time.sleep(0.5)
+
+                    if decision == "reload":
+                        jlog("retry", "User confirmed reload. Relaunch + retry same keyword.", "WARN")
+                        try:
+                            relaunch()
+                        except Exception:
+                            pass
+                        try:
+                            job_repo.clear_checkpoint(job_id)
+                        except Exception:
+                            pass
+                        job_repo.reset_to_pending_for_retry(job_id, msg, worker_id=worker_id)
+                        jlog("retry", "Reset job to pending for retry (user-confirmed antiblock).", "WARN")
+                    elif decision == "continue":
+                        jlog("antiblock", "User chose continue. Will keep running without reload.", "WARN")
+                        try:
+                            job_repo.clear_checkpoint(job_id)
+                        except Exception:
+                            pass
+                        # Best-effort: continue the SAME job without relaunch/navigation.
+                        # If this was a false positive, capture can proceed normally.
+                        try:
+                            saved = capture_posts(
+                                page,
+                                params,
+                                posts_root=posts_root,
+                                progress=progress,
+                                log=lambda s, m: jlog(s, m),
+                                should_cancel=should_cancel_watchdog,
+                                expected_search_url=last_page_url or None,
+                            )
+                            if should_cancel():
+                                jlog("cancel", f"Cancelled. Saved={saved}", "WARN")
+                                job_repo.mark_cancelled(job_id)
+                            else:
+                                progress(saved, -1 if params.max_posts <= 0 else max(saved, params.max_posts))
+                                jlog("done", f"Completed. Saved={saved}")
+                                job_repo.mark_done(job_id)
+                        except CaptchaOrCheckpointDetected as e2:
+                            # If it triggers again, loop will catch and prompt UI again.
+                            raise e2
+                        except Exception as e2:
+                            jlog("error", f"Continue-after-checkpoint failed: {e2}", "ERROR")
+                            job_repo.mark_error(job_id, f"Continue-after-checkpoint failed: {e2}")
                     else:
-                        job_repo.mark_error(job_id, str(e))
+                        job_repo.mark_error(job_id, msg)
 
                 except ElementTimeout as e:
                     # Retry lightly for element timeouts only (1-2 times)

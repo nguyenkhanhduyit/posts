@@ -39,6 +39,7 @@ _STATE_KEY_DELAY_MIN_SEC = "delay_min_sec"
 _STATE_KEY_DELAY_MAX_SEC = "delay_max_sec"
 _STATE_KEY_BETWEEN_KW_DELAY_MIN_SEC = "between_kw_delay_min_sec"
 _STATE_KEY_BETWEEN_KW_DELAY_MAX_SEC = "between_kw_delay_max_sec"
+_STATE_KEY_SAVE_HTML = "save_html"
 
 
 def _get_state_int(key: str, default: int) -> int:
@@ -160,6 +161,7 @@ def get_settings() -> JSONResponse:
     keyword_file = _get_state_str(_STATE_KEY_KEYWORD_FILE, "").strip()
     email = _get_state_str(_STATE_KEY_EMAIL, "").strip()
     save_secrets_to_dotenv = _get_state_bool(_STATE_KEY_SAVE_SECRETS_TO_DOTENV, False)
+    save_html = _get_state_bool(_STATE_KEY_SAVE_HTML, True)
     delay_min_sec = float(_get_state_str(_STATE_KEY_DELAY_MIN_SEC, str(getattr(settings, "default_delay_min_sec", 1.0))) or "1")
     delay_max_sec = float(_get_state_str(_STATE_KEY_DELAY_MAX_SEC, str(getattr(settings, "default_delay_max_sec", 3.0))) or "3")
     bkw_min_sec = float(
@@ -186,6 +188,7 @@ def get_settings() -> JSONResponse:
             "keywordFile": keyword_file,
             "email": email,
             "saveSecretsToDotenv": save_secrets_to_dotenv,
+            "saveHtml": save_html,
             "delayMinSec": delay_min_sec,
             "delayMaxSec": delay_max_sec,
             "betweenKwDelayMinSec": bkw_min_sec,
@@ -241,6 +244,7 @@ def set_settings(payload: dict) -> JSONResponse:
         save_secrets_to_dotenv = bool(
             payload.get("saveSecretsToDotenv", _get_state_bool(_STATE_KEY_SAVE_SECRETS_TO_DOTENV, False))
         )
+        save_html = bool(payload.get("saveHtml", _get_state_bool(_STATE_KEY_SAVE_HTML, True)))
         if save_secrets_to_dotenv and password.strip() == "":
             raise ValueError("Bật “Lưu FB_EMAIL/FB_PASSWORD vào app/.env” nhưng đang để trống password.")
 
@@ -306,6 +310,11 @@ def set_settings(payload: dict) -> JSONResponse:
     _set_state_str(_STATE_KEY_KEYWORD_FILE, keyword_file)
     _set_state_str(_STATE_KEY_EMAIL, email)
     _set_state_bool(_STATE_KEY_SAVE_SECRETS_TO_DOTENV, save_secrets_to_dotenv)
+    _set_state_bool(_STATE_KEY_SAVE_HTML, save_html)
+    try:
+        job_repo.set_save_html_for_active(save_html)
+    except Exception:
+        pass
     _set_state_str(_STATE_KEY_DELAY_MIN_SEC, str(dmin))
     _set_state_str(_STATE_KEY_DELAY_MAX_SEC, str(dmax))
     _set_state_str(_STATE_KEY_BETWEEN_KW_DELAY_MIN_SEC, str(bmin))
@@ -331,6 +340,7 @@ def set_settings(payload: dict) -> JSONResponse:
             "keywordFile": keyword_file,
             "email": email,
             "saveSecretsToDotenv": save_secrets_to_dotenv,
+            "saveHtml": save_html,
             "delayMinSec": dmin,
             "delayMaxSec": dmax,
             "betweenKwDelayMinSec": bmin,
@@ -424,6 +434,9 @@ def start_job(payload: dict) -> JSONResponse:
             or "2"
         )
 
+        # Save DOM HTML snapshot per-post (post_###.html) toggle
+        save_html = _get_state_bool(_STATE_KEY_SAVE_HTML, True)
+
         # Allow credentials from .env when UI leaves blank
         if not email:
             email = _get_state_str(_STATE_KEY_EMAIL, "").strip()
@@ -478,6 +491,7 @@ def start_job(payload: dict) -> JSONResponse:
             (lambda wc: [(i % wc) for i in range(len(keywords))])(max(1, int(_get_state_int(_STATE_KEY_WORKER_COUNT, 1))))
         ),
         headless=headless,
+        save_html=save_html,
         max_posts=max_posts,
         delay_min_sec=delay_min,
         delay_max_sec=delay_max,
@@ -509,6 +523,25 @@ def start_job(payload: dict) -> JSONResponse:
         except Exception:
             pass
     return JSONResponse({"jobIds": job_ids, "maxKeywords": max_keywords, "truncated": int(truncated)})
+
+
+@app.post("/checkpoint/decision")
+def checkpoint_decision(payload: dict) -> JSONResponse:
+    """
+    UI confirms what to do when a worker detects checkpoint/captcha.
+    decision: "reload" | "continue"
+    """
+    job_id = str(payload.get("jobId", "")).strip()
+    decision = str(payload.get("decision", "")).strip().lower()
+    if not job_id:
+        raise HTTPException(status_code=400, detail="Missing jobId")
+    if decision not in {"reload", "continue"}:
+        raise HTTPException(status_code=400, detail="decision must be reload|continue")
+    job = job_repo.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job_repo.set_checkpoint_decision(job_id, decision)
+    return JSONResponse({"ok": True, "jobId": job_id, "decision": decision})
 
 
 @app.get("/job-status")

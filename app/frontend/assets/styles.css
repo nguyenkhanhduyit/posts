@@ -391,6 +391,50 @@ select:focus{
   text-align:center;
 }
 
+/* Modal (checkpoint confirmation) */
+.modal-backdrop{
+  position:fixed;
+  inset:0;
+  background: rgba(0,0,0,.55);
+  backdrop-filter: blur(6px);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:18px;
+  z-index: 9999;
+}
+.modal{
+  width:min(760px, 100%);
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-soft);
+  padding: 14px;
+}
+.modal-title{
+  font-weight: 850;
+  letter-spacing: .2px;
+  margin-bottom: 10px;
+}
+.modal-body{ color: var(--text-soft); }
+.modal-line{ margin: 6px 0; }
+.modal-pre{
+  margin: 8px 0 10px;
+  padding: 10px 12px;
+  background: rgba(0,0,0,.25);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+.modal-actions{
+  display:flex;
+  gap:10px;
+  justify-content:flex-end;
+  margin-top: 10px;
+}
+
 @media (max-width: 980px){
   .stats{grid-template-columns: 1fr 1fr}
   .grid{grid-template-columns:1fr}

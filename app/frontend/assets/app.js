@@ -9,6 +9,7 @@ let selectedJobKeyword = null;
 // Logs UI: keep logs for the whole session and split by worker.
 // Each worker panel keeps its own SSE + seq cursor, so switching keywords won't clear old logs.
 const workerPanels = new Map(); // Map<string, {workerKey, root, titleEl, progressTextEl, progressFillEl, logEl, sse, lastSeq, jobId}>
+let configuredWorkerCount = 1;
 
 const JOBS_PAGE_SIZE = 30;
 let showAllJobs = false;
@@ -18,6 +19,47 @@ let lastRenderedJobs = [];
 let loadedKeywords = [];
 let lastAutoSelectedRunningId = null;
 let currentSessionJobIds = null; // Set<string> | null
+
+let checkpointModalJobId = null;
+let checkpointModalOpen = false;
+
+function showCheckpointModal(job) {
+  const modal = qs("checkpointModal");
+  if (!modal) return;
+  checkpointModalOpen = true;
+  checkpointModalJobId = job?.id || null;
+  const widRaw = job?.last_worker_id != null ? String(job.last_worker_id).trim() : "";
+  const wid = widRaw ? `w${widRaw}` : "w?";
+  const kw = String(job?.keyword || "").trim();
+  const msg = String(job?.checkpoint_message || job?.last_error || "").trim();
+  const wEl = qs("cpWorker");
+  const kEl = qs("cpKeyword");
+  const mEl = qs("cpMessage");
+  if (wEl) wEl.textContent = wid;
+  if (kEl) kEl.textContent = kw || "—";
+  if (mEl) mEl.textContent = msg || "(không có chi tiết)";
+  modal.style.display = "flex";
+}
+
+function hideCheckpointModal() {
+  const modal = qs("checkpointModal");
+  if (!modal) return;
+  checkpointModalOpen = false;
+  checkpointModalJobId = null;
+  modal.style.display = "none";
+}
+
+async function sendCheckpointDecision(decision) {
+  if (!checkpointModalJobId) return;
+  try {
+    await apiJson("/checkpoint/decision", "POST", { jobId: checkpointModalJobId, decision });
+  } catch (e) {
+    // show in form area
+    showFormMessage(`Không gửi được quyết định checkpoint: ${String(e.message || e)}`, "error");
+  } finally {
+    hideCheckpointModal();
+  }
+}
 
 function updateStatsUI(jobs) {
   const total = jobs.length;
@@ -85,6 +127,7 @@ function setSessionNotice(msg) {
 
 const LS = {
   headless: "fbshot.headless",
+  saveHtml: "fbshot.saveHtml",
   limitEnabled: "fbshot.limitEnabled",
   maxPosts: "fbshot.maxPosts",
   workerCount: "fbshot.workerCount",
@@ -244,7 +287,12 @@ function showFormMessage(msg, kind = "error") {
 
 function _normWorkerKey(workerId) {
   const raw = String(workerId ?? "").trim();
-  if (!raw) return "w?";
+  if (!raw) {
+    // Avoid creating an extra "w?" panel.
+    // When workerCount=1 (or when panels are pre-created), map unknown worker to w0.
+    if (configuredWorkerCount <= 1 || workerPanels.has("w0")) return "w0";
+    return "w0";
+  }
   return raw.startsWith("w") ? raw : `w${raw}`;
 }
 
@@ -299,6 +347,8 @@ function ensureWorkerPanel(workerId) {
   const panel = {
     workerKey: key,
     root,
+    headerEl: header,
+    workerLabelEl: left,
     titleEl: right,
     progressTextEl: progress.querySelector(".progressText"),
     progressFillEl: progress.querySelector(".progressFill"),
@@ -309,6 +359,27 @@ function ensureWorkerPanel(workerId) {
   };
   workerPanels.set(key, panel);
   return panel;
+}
+
+function syncWorkerPanels(workerCount) {
+  const n = Number.parseInt(String(workerCount ?? "1"), 10);
+  const wc = Number.isFinite(n) && n > 0 ? Math.min(8, Math.max(1, n)) : 1;
+  configuredWorkerCount = wc;
+  const host = qs("logsContainer");
+  if (!host) return;
+
+  // Reset panels to match desired count (simple + predictable).
+  for (const p of workerPanels.values()) closePanelSSE(p);
+  workerPanels.clear();
+  host.innerHTML = "";
+
+  for (let i = 0; i < wc; i++) ensureWorkerPanel(`w${i}`);
+
+  // If only 1 worker: render as a single "Logs" panel (no w0 label).
+  if (wc === 1) {
+    const p = workerPanels.get("w0");
+    if (p && p.workerLabelEl) p.workerLabelEl.textContent = "Logs";
+  }
 }
 
 function panelAppend(panel, line) {
@@ -396,6 +467,13 @@ async function refreshJobs() {
   const sessionJobs = filterToCurrentSession(lastJobsSnapshot);
   renderJobs(sessionJobs);
   updateStatsUI(sessionJobs);
+
+  // If any job is waiting for checkpoint decision, prompt the user.
+  // Do not auto-reload; user must decide.
+  if (!checkpointModalOpen) {
+    const pending = sessionJobs.find((j) => Number(j.checkpoint_pending || 0) === 1) || null;
+    if (pending) showCheckpointModal(pending);
+  }
 
   // If UI is showing "current session only", warn when another session is already running.
   // Otherwise it looks like "only created log" while the worker is busy elsewhere.
@@ -581,6 +659,7 @@ async function loadRuntimeSettings() {
   const mkEl = qs("maxKeywords");
   const emailEl = qs("email");
   const headlessEl = qs("headless");
+  const saveHtmlEl = qs("saveHtml");
   const limitEnabledEl = qs("limitEnabled");
   const maxPostsEl = qs("maxPosts");
   const delayMinEl = qs("delayMinSec");
@@ -595,6 +674,8 @@ async function loadRuntimeSettings() {
     if (wcEl && Number.isFinite(wc) && wc > 0) wcEl.value = String(wc);
     if (mkEl && Number.isFinite(mk) && mk > 0) mkEl.value = String(mk);
     if (wcEl) lsSet(LS.workerCount, wcEl.value);
+    // Pre-create log panels based on configured workers (even before any job starts).
+    syncWorkerPanels(wcEl ? wcEl.value : wc);
     if (mkEl) lsSet(LS.maxKeywords, mkEl.value);
 
     if (emailEl && typeof s.email === "string") emailEl.value = String(s.email || "");
@@ -602,6 +683,10 @@ async function loadRuntimeSettings() {
     const headless = !!s.headless;
     if (headlessEl) headlessEl.checked = headless;
     lsSet(LS.headless, headless ? "1" : "0");
+
+    const saveHtml = s.saveHtml == null ? true : !!s.saveHtml;
+    if (saveHtmlEl) saveHtmlEl.checked = saveHtml;
+    lsSet(LS.saveHtml, saveHtml ? "1" : "0");
 
     const limitEnabled = !!s.limitEnabled;
     if (limitEnabledEl) limitEnabledEl.checked = limitEnabled;
@@ -643,6 +728,7 @@ async function loadRuntimeSettings() {
       const saved = lsGetInt(LS.workerCount, 1);
       if (saved > 0) wcEl.value = String(saved);
     }
+    syncWorkerPanels(wcEl ? wcEl.value : 1);
     if (mkEl) {
       const saved = lsGetInt(LS.maxKeywords, 500);
       if (saved > 0) mkEl.value = String(saved);
@@ -650,6 +736,7 @@ async function loadRuntimeSettings() {
 
     if (saveSecretsEl) saveSecretsEl.checked = lsGetBool(LS.saveSecretsToDotenv, false);
     if (headlessEl) headlessEl.checked = lsGetBool(LS.headless, false);
+    if (saveHtmlEl) saveHtmlEl.checked = lsGetBool(LS.saveHtml, true);
     if (limitEnabledEl) limitEnabledEl.checked = lsGetBool(LS.limitEnabled, false);
     if (maxPostsEl && !maxPostsEl.value) {
       const savedMp = lsGetInt(LS.maxPosts, 30);
@@ -669,6 +756,7 @@ async function saveRuntimeSettings() {
   const emailEl = qs("email");
   const passwordEl = qs("password");
   const headlessEl = qs("headless");
+  const saveHtmlEl = qs("saveHtml");
   const limitEnabledEl = qs("limitEnabled");
   const maxPostsEl = qs("maxPosts");
   const kwSel = qs("keywordFile");
@@ -680,6 +768,7 @@ async function saveRuntimeSettings() {
   const workerCount = Number.parseInt(String(wcEl?.value ?? "1"), 10);
   const maxKeywords = Number.parseInt(String(mkEl?.value ?? "500"), 10);
   const headless = !!headlessEl?.checked;
+  const saveHtml = !!saveHtmlEl?.checked;
   const limitEnabled = !!limitEnabledEl?.checked;
   const maxPosts = Number.parseInt(String(maxPostsEl?.value ?? "30"), 10);
   const email = String(emailEl?.value ?? "").trim();
@@ -716,6 +805,7 @@ async function saveRuntimeSettings() {
   lsSet(LS.workerCount, String(workerCount));
   lsSet(LS.maxKeywords, String(maxKeywords));
   lsSet(LS.headless, headless ? "1" : "0");
+  lsSet(LS.saveHtml, saveHtml ? "1" : "0");
   lsSet(LS.limitEnabled, limitEnabled ? "1" : "0");
   if (Number.isFinite(maxPosts) && maxPosts > 0) lsSet(LS.maxPosts, String(maxPosts));
   lsSet(LS.saveSecretsToDotenv, saveSecretsToDotenv ? "1" : "0");
@@ -727,6 +817,7 @@ async function saveRuntimeSettings() {
     workerCount,
     maxKeywords,
     headless,
+    saveHtml,
     limitEnabled,
     maxPosts: limitEnabled ? maxPosts : null,
     keywordFile,
@@ -742,6 +833,7 @@ async function saveRuntimeSettings() {
     workerCount,
     maxKeywords,
     headless,
+    saveHtml,
     limitEnabled,
     maxPosts: limitEnabled ? maxPosts : null,
     keywordFile,
@@ -854,6 +946,10 @@ qs("startBtn").onclick = onStart;
 qs("cleanAllBtn").onclick = cleanAll;
 const applySettingsBtn = qs("applySettingsBtn");
 if (applySettingsBtn) applySettingsBtn.onclick = applyRuntimeSettingsNow;
+const cpContinueBtn = qs("cpContinueBtn");
+if (cpContinueBtn) cpContinueBtn.onclick = () => sendCheckpointDecision("continue");
+const cpReloadBtn = qs("cpReloadBtn");
+if (cpReloadBtn) cpReloadBtn.onclick = () => sendCheckpointDecision("reload");
 qs("hideFinished").onchange = (e) => {
   hideFinished = !!e.target.checked;
   renderJobs(filterToCurrentSession(lastJobsSnapshot));
@@ -868,6 +964,7 @@ qs("keywordFile").onchange = () => loadKeywordsFromSelectedFile();
 
 (function bindSettingsPersistence() {
   const headless = qs("headless");
+  const saveHtml = qs("saveHtml");
   const limitEnabled = qs("limitEnabled");
   const maxPosts = qs("maxPosts");
   const workerCount = qs("workerCount");
@@ -877,6 +974,11 @@ qs("keywordFile").onchange = () => loadKeywordsFromSelectedFile();
   if (headless) {
     headless.checked = lsGetBool(LS.headless, false);
     headless.addEventListener("change", () => lsSet(LS.headless, headless.checked ? "1" : "0"));
+  }
+
+  if (saveHtml) {
+    saveHtml.checked = lsGetBool(LS.saveHtml, true);
+    saveHtml.addEventListener("change", () => lsSet(LS.saveHtml, saveHtml.checked ? "1" : "0"));
   }
 
   if (limitEnabled) {
@@ -898,7 +1000,10 @@ qs("keywordFile").onchange = () => loadKeywordsFromSelectedFile();
   if (workerCount) {
     workerCount.addEventListener("input", () => {
       const n = Number.parseInt(String(workerCount.value || "0"), 10);
-      if (Number.isFinite(n) && n > 0) lsSet(LS.workerCount, String(n));
+      if (Number.isFinite(n) && n > 0) {
+        lsSet(LS.workerCount, String(n));
+        syncWorkerPanels(n);
+      }
     });
   }
 

@@ -31,6 +31,10 @@ class JobRow:
     attempt: int
     max_attempts: int
     headless: int
+    save_html: int = 1
+    checkpoint_pending: int = 0
+    checkpoint_message: Optional[str] = None
+    checkpoint_decision: Optional[str] = None
     retry_worker_id: Optional[str] = None
     last_worker_id: Optional[str] = None
     assigned_worker_id: Optional[str] = None
@@ -41,6 +45,10 @@ def _row_to_job(r: sqlite3.Row) -> JobRow:
     d.setdefault("retry_worker_id", None)
     d.setdefault("last_worker_id", None)
     d.setdefault("assigned_worker_id", None)
+    d.setdefault("save_html", 1)
+    d.setdefault("checkpoint_pending", 0)
+    d.setdefault("checkpoint_message", None)
+    d.setdefault("checkpoint_decision", None)
     return JobRow(**d)
 
 
@@ -61,6 +69,7 @@ class JobRepo:
         delay_max_sec: float,
         between_keywords_delay_min_sec: float,
         between_keywords_delay_max_sec: float,
+        save_html: bool = True,
         max_attempts: int = 2,
     ) -> list[str]:
         ids: list[str] = []
@@ -80,6 +89,7 @@ class JobRepo:
                     INSERT INTO jobs(
                       id, keyword, email, password_enc,
                       headless,
+                      save_html,
                       max_posts, delay_min_sec, delay_max_sec,
                       between_keywords_delay_min_sec, between_keywords_delay_max_sec,
                       status, progress_current, progress_total,
@@ -87,7 +97,7 @@ class JobRepo:
                       last_error, cancel_requested, attempt, max_attempts,
                       assigned_worker_id
                     )
-                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, NULL, NULL, NULL, 0, 0, ?, ?);
+                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, NULL, NULL, NULL, 0, 0, ?, ?);
                     """,
                     (
                         job_id,
@@ -95,6 +105,7 @@ class JobRepo:
                         email,
                         password_enc,
                         1 if headless else 0,
+                        1 if save_html else 0,
                         max_posts,
                         delay_min_sec,
                         delay_max_sec,
@@ -116,12 +127,72 @@ class JobRepo:
               id, keyword, status,
               progress_current, progress_total,
               created_at, started_at, finished_at,
-              last_error, last_worker_id, retry_worker_id, assigned_worker_id
+              last_error, last_worker_id, retry_worker_id, assigned_worker_id,
+              checkpoint_pending, checkpoint_message
             FROM jobs
             ORDER BY created_at DESC, rowid DESC;
             """
         )
         return [dict(r) for r in cur.fetchall()]
+
+    def mark_checkpoint_pending(self, job_id: str, message: str) -> None:
+        with self.conn:
+            self.conn.execute(
+                """
+                UPDATE jobs
+                SET checkpoint_pending=1, checkpoint_message=?, checkpoint_decision=NULL
+                WHERE id=?;
+                """,
+                (str(message or "")[:2000], job_id),
+            )
+
+    def set_save_html_for_active(self, save_html: bool) -> int:
+        """
+        Apply setting to all jobs that haven't finished yet.
+        (So "Áp dụng settings" affects the whole run, not only newly created jobs.)
+        """
+        v = 1 if bool(save_html) else 0
+        with self.conn:
+            cur = self.conn.execute(
+                "UPDATE jobs SET save_html=? WHERE status IN ('pending','running');",
+                (v,),
+            )
+            return int(cur.rowcount or 0)
+
+    def clear_checkpoint(self, job_id: str) -> None:
+        with self.conn:
+            self.conn.execute(
+                """
+                UPDATE jobs
+                SET checkpoint_pending=0, checkpoint_message=NULL, checkpoint_decision=NULL
+                WHERE id=?;
+                """,
+                (job_id,),
+            )
+
+    def set_checkpoint_decision(self, job_id: str, decision: str) -> None:
+        # decision: "reload" | "continue"
+        d = str(decision or "").strip().lower()
+        if d not in {"reload", "continue"}:
+            d = "continue"
+        with self.conn:
+            self.conn.execute(
+                "UPDATE jobs SET checkpoint_decision=? WHERE id=?;",
+                (d, job_id),
+            )
+
+    def get_checkpoint_state(self, job_id: str) -> dict[str, Any]:
+        row = self.conn.execute(
+            "SELECT checkpoint_pending, checkpoint_message, checkpoint_decision FROM jobs WHERE id=?;",
+            (job_id,),
+        ).fetchone()
+        if not row:
+            return {"pending": 0, "message": None, "decision": None}
+        return {
+            "pending": int(row["checkpoint_pending"] or 0),
+            "message": row["checkpoint_message"],
+            "decision": row["checkpoint_decision"],
+        }
 
     def get_job(self, job_id: str) -> Optional[JobRow]:
         cur = self.conn.execute("SELECT * FROM jobs WHERE id = ?;", (job_id,))

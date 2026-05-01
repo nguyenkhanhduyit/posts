@@ -65,6 +65,10 @@
                 <input type="checkbox" id="headless" />
                 <span>Ẩn Chrome (headless)</span>
               </label>
+              <label class="chk" title="Bật để lưu DOM HTML (post_###.html) cạnh ảnh. Tắt để chỉ lưu ảnh .png.">
+                <input type="checkbox" id="saveHtml" />
+                <span>Lưu HTML (DOM snapshot)</span>
+              </label>
             </div>
 
             <div class="row2">
@@ -170,6 +174,23 @@
           <div id="logsContainer"></div>
         </section>
       </main>
+
+      <div class="modal-backdrop" id="checkpointModal" style="display:none">
+        <div class="modal">
+          <div class="modal-title">Phát hiện Checkpoint/Captcha</div>
+          <div class="modal-body">
+            <div class="modal-line"><b>Worker</b>: <span id="cpWorker">—</span></div>
+            <div class="modal-line"><b>Keyword</b>: <span id="cpKeyword">—</span></div>
+            <div class="modal-line"><b>Chi tiết</b>:</div>
+            <pre class="modal-pre" id="cpMessage"></pre>
+            <div class="hint">Chương trình sẽ <b>không tự reload</b>. Bạn chọn hành động bên dưới.</div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn" id="cpContinueBtn" type="button">Tiếp tục (không reload)</button>
+            <button class="btn danger" id="cpReloadBtn" type="button">Reload worker &amp; thử lại</button>
+          </div>
+        </div>
+      </div>
 
       <footer class="footer">
         <span>Copyright Nguyễn Khánh Duy IT Nasani 2026</span>

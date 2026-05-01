@@ -39,7 +39,11 @@ def migrate(conn: sqlite3.Connection) -> None:
           cancel_requested INTEGER NOT NULL DEFAULT 0,
           attempt INTEGER NOT NULL DEFAULT 0,
           max_attempts INTEGER NOT NULL DEFAULT 2,
-          headless INTEGER NOT NULL DEFAULT 0
+          headless INTEGER NOT NULL DEFAULT 0,
+          save_html INTEGER NOT NULL DEFAULT 1,
+          checkpoint_pending INTEGER NOT NULL DEFAULT 0,
+          checkpoint_message TEXT,
+          checkpoint_decision TEXT
         );
         """
     )
@@ -54,6 +58,14 @@ def migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE jobs ADD COLUMN last_worker_id TEXT;")
     if "assigned_worker_id" not in cols:
         conn.execute("ALTER TABLE jobs ADD COLUMN assigned_worker_id TEXT;")
+    if "save_html" not in cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN save_html INTEGER NOT NULL DEFAULT 1;")
+    if "checkpoint_pending" not in cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN checkpoint_pending INTEGER NOT NULL DEFAULT 0;")
+    if "checkpoint_message" not in cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN checkpoint_message TEXT;")
+    if "checkpoint_decision" not in cols:
+        conn.execute("ALTER TABLE jobs ADD COLUMN checkpoint_decision TEXT;")
 
     conn.execute(
         """
