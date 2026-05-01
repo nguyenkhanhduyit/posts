@@ -5,8 +5,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let selectedJobId = null;
 let selectedJobKeyword = null;
-let sse = null;
-let lastSeq = 0;
+
+// Logs UI: keep logs for the whole session and split by worker.
+// Each worker panel keeps its own SSE + seq cursor, so switching keywords won't clear old logs.
+const workerPanels = new Map(); // Map<string, {workerKey, root, titleEl, progressTextEl, progressFillEl, logEl, sse, lastSeq, jobId}>
 
 const JOBS_PAGE_SIZE = 30;
 let showAllJobs = false;
@@ -240,17 +242,87 @@ function showFormMessage(msg, kind = "error") {
   el.textContent = msg || "";
 }
 
-function appendLogLine(line) {
-  const log = qs("log");
-  log.textContent += line + "\n";
-  log.scrollTop = log.scrollHeight;
+function _normWorkerKey(workerId) {
+  const raw = String(workerId ?? "").trim();
+  if (!raw) return "w?";
+  return raw.startsWith("w") ? raw : `w${raw}`;
 }
 
-function setProgress(cur, total) {
+function ensureWorkerPanel(workerId) {
+  const key = _normWorkerKey(workerId);
+  if (workerPanels.has(key)) return workerPanels.get(key);
+
+  const host = qs("logsContainer");
+  if (!host) return null;
+
+  const root = document.createElement("div");
+  root.className = "log-panel";
+  root.style.cssText =
+    "border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:12px;margin:10px 0;background:rgba(255,255,255,.03)";
+
+  const header = document.createElement("div");
+  header.style.cssText = "display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:8px";
+
+  const left = document.createElement("div");
+  left.style.cssText = "font-weight:700";
+  left.textContent = key;
+
+  const right = document.createElement("div");
+  right.style.cssText = "opacity:.85;font-size:12px";
+  right.textContent = "—";
+
+  header.appendChild(left);
+  header.appendChild(right);
+
+  const progress = document.createElement("div");
+  progress.className = "progress";
+  progress.style.margin = "8px 0 10px";
+  progress.innerHTML = `
+    <div class="progress-label">
+      <span>Progress</span>
+      <span class="progressText">0/0</span>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill progressFill" style="width:0%"></div>
+    </div>
+  `;
+
+  const logEl = document.createElement("pre");
+  logEl.className = "log";
+  logEl.style.margin = "0";
+
+  root.appendChild(header);
+  root.appendChild(progress);
+  root.appendChild(logEl);
+  host.appendChild(root);
+
+  const panel = {
+    workerKey: key,
+    root,
+    titleEl: right,
+    progressTextEl: progress.querySelector(".progressText"),
+    progressFillEl: progress.querySelector(".progressFill"),
+    logEl,
+    sse: null,
+    lastSeq: 0,
+    jobId: null,
+  };
+  workerPanels.set(key, panel);
+  return panel;
+}
+
+function panelAppend(panel, line) {
+  if (!panel || !panel.logEl) return;
+  panel.logEl.textContent += line + "\n";
+  panel.logEl.scrollTop = panel.logEl.scrollHeight;
+}
+
+function panelSetProgress(panel, cur, total) {
+  if (!panel) return;
   const totalTxt = total == null || Number(total) <= 0 ? "∞" : String(total);
-  qs("progressText").textContent = `${cur}/${totalTxt}`;
+  if (panel.progressTextEl) panel.progressTextEl.textContent = `${cur}/${totalTxt}`;
   const pct = total > 0 ? Math.min(100, Math.round((cur / total) * 100)) : 0;
-  qs("progressFill").style.width = `${pct}%`;
+  if (panel.progressFillEl) panel.progressFillEl.style.width = `${pct}%`;
 }
 
 async function apiJson(path, method = "GET", body = null) {
@@ -339,37 +411,13 @@ async function refreshJobs() {
   }
 
   // Auto-follow currently running job so logs keep updating when keyword changes.
-  const running = getCurrentRunningJob(sessionJobs);
-  if (running && running.id) {
-    const runningId = running.id;
-    const selected = selectedJobId ? sessionJobs.find((x) => x.id === selectedJobId) || null : null;
-
-    // IMPORTANT:
-    // When a worker hits Captcha/Checkpoint, the backend intentionally resets the job to `pending`
-    // with `retry_worker_id` set so the same worker retries the SAME keyword.
-    // During that short window, auto-following "first running job" makes the UI look like it
-    // "jumped" to a different keyword / Chrome window.
-    const selectedIsRetryPending =
-      !!selected &&
-      String(selected.status || "") === "pending" &&
-      selected.retry_worker_id != null &&
-      String(selected.retry_worker_id).trim() !== "";
-
-    const selectedFinished = selected ? isFinished(selected.status) : false;
-    const shouldAutoSelect =
-      !selectedJobId ||
-      selectedFinished ||
-      (!selectedIsRetryPending && lastAutoSelectedRunningId && lastAutoSelectedRunningId !== runningId);
-
-    if (shouldAutoSelect && selectedJobId !== runningId) {
-      lastAutoSelectedRunningId = runningId;
-      selectJob(runningId, running.keyword, running.progress_current ?? 0, running.progress_total ?? 0);
+  const runningJobs = sessionJobs.filter((j) => j.status === "running");
+  for (const j of runningJobs) {
+    try {
+      await followJobOnPanel(j);
+    } catch {
+      // ignore
     }
-  }
-
-  if (selectedJobId) {
-    const cur = sessionJobs.find((x) => x.id === selectedJobId);
-    if (cur) setProgress(cur.progress_current, cur.progress_total);
   }
 }
 
@@ -383,23 +431,29 @@ function trySelectJobFromJobsText() {
   if (jobIdx < 0 || jobIdx >= lastRenderedJobs.length) return;
   const job = lastRenderedJobs[jobIdx];
   if (!job || !job.id) return;
-  selectJob(job.id, job.keyword, job.progress_current ?? 0, job.progress_total ?? 0);
+  // Follow this job on its worker panel (append logs, do not clear).
+  followJobOnPanel(job);
 }
 
-function closeSSE() {
-  if (sse) {
-    sse.close();
-    sse = null;
+function closePanelSSE(panel) {
+  try {
+    if (panel && panel.sse) {
+      panel.sse.close();
+      panel.sse = null;
+    }
+  } catch {
+    // ignore
   }
 }
 
-async function loadInitialLogs(jobId) {
+async function loadInitialLogsIntoPanel(panel, jobId, keyword) {
   const data = await apiJson(`/logs?jobId=${encodeURIComponent(jobId)}&offset=0&limit=200`);
-  qs("log").textContent = "";
-  lastSeq = 0;
+  panelAppend(panel, "");
+  panelAppend(panel, `──────── ${String(keyword || "").trim()} (${String(jobId)}) ────────`);
+  panel.lastSeq = 0;
   for (const it of data.items) {
-    lastSeq = Math.max(lastSeq, it.seq);
-    appendLogLine(formatLog(it));
+    panel.lastSeq = Math.max(panel.lastSeq, it.seq);
+    panelAppend(panel, formatLog(it));
   }
 }
 
@@ -461,40 +515,52 @@ function formatLog(it) {
   return `${t} ${lvl} ${step} ${msg}`.trim();
 }
 
-function startSSE(jobId, offset) {
-  closeSSE();
-  sse = new EventSource(`/logs/stream?jobId=${encodeURIComponent(jobId)}&offset=${offset}`);
-  sse.onmessage = (ev) => {
+function startPanelSSE(panel, jobId, offset) {
+  closePanelSSE(panel);
+  panel.sse = new EventSource(`/logs/stream?jobId=${encodeURIComponent(jobId)}&offset=${offset}`);
+  panel.sse.onmessage = (ev) => {
     try {
       const msg = JSON.parse(ev.data);
-      lastSeq = Math.max(lastSeq, msg.seq || lastSeq);
-      appendLogLine(formatLog(msg));
-    } catch (e) {
+      panel.lastSeq = Math.max(panel.lastSeq, msg.seq || panel.lastSeq);
+      panelAppend(panel, formatLog(msg));
+    } catch {
       // ignore
     }
   };
-  sse.onerror = () => {
-    // auto-reconnect behavior: close and retry
-    closeSSE();
-    setTimeout(() => startSSE(jobId, lastSeq), 1000);
+  panel.sse.onerror = () => {
+    closePanelSSE(panel);
+    setTimeout(() => startPanelSSE(panel, jobId, panel.lastSeq), 1000);
   };
 }
 
-async function selectJob(jobId, keyword, cur, total) {
+async function followJobOnPanel(job) {
+  if (!job || !job.id) return;
+  const widRaw = job.last_worker_id != null ? String(job.last_worker_id).trim() : "";
+  const panel = ensureWorkerPanel(widRaw ? `w${widRaw}` : "w?");
+  if (!panel) return;
+
+  const jobId = job.id;
+  const keyword = job.keyword || "";
+
   selectedJobId = jobId;
   selectedJobKeyword = keyword;
-  qs("selectedJob").textContent = `${keyword}`;
-  setProgress(cur || 0, total || 0);
+
+  if (panel.titleEl) panel.titleEl.textContent = String(keyword || "").trim() || "—";
+  panelSetProgress(panel, job.progress_current ?? 0, job.progress_total ?? 0);
+
+  const changed = String(panel.jobId || "") !== String(jobId);
+  if (!changed) return;
+
+  panel.jobId = jobId;
   try {
-    await loadInitialLogs(jobId);
+    await loadInitialLogsIntoPanel(panel, jobId, keyword);
   } catch (e) {
-    qs("log").textContent = "";
-    appendLogLine(`(UI) Không tải được logs ban đầu: ${String(e.message || e)}`);
+    panelAppend(panel, `(UI) Không tải được logs ban đầu: ${String(e.message || e)}`);
   }
   try {
-    startSSE(jobId, lastSeq);
+    startPanelSSE(panel, jobId, panel.lastSeq);
   } catch (e) {
-    appendLogLine(`(UI) Không mở được log realtime: ${String(e.message || e)}`);
+    panelAppend(panel, `(UI) Không mở được log realtime: ${String(e.message || e)}`);
   }
 }
 
@@ -757,29 +823,23 @@ async function onStart() {
     await refreshJobs();
     if (res.jobIds && res.jobIds[0]) {
       await sleep(200);
-      // auto-select first job
+      // auto-follow first job into its worker panel
       const firstId = res.jobIds[0];
       const job = (lastJobsSnapshot || []).find((j) => j.id === firstId);
-      const firstKw = job?.keyword || keywords[0];
-      const total = limitEnabled ? maxPosts : -1;
-      selectJob(firstId, firstKw, 0, total);
+      if (job) followJobOnPanel(job);
     }
   } catch (e) {
     showError(String(e.message || e));
   }
 }
 
-function clearLogs() {
-  qs("log").textContent = "";
-}
-
 function clearSelectionUI() {
   selectedJobId = null;
   selectedJobKeyword = null;
-  qs("selectedJob").textContent = "No job selected";
-  clearLogs();
-  setProgress(0, 0);
-  closeSSE();
+  // Do not clear panel logs; just stop SSE streams.
+  for (const p of workerPanels.values()) {
+    closePanelSSE(p);
+  }
 }
 
 async function cleanAll() {

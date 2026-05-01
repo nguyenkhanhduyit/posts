@@ -2586,12 +2586,64 @@ def capture_posts(
                 pass
 
             final_path = out_dir / f"post_{next_index:03d}.png"
-            # Save expanded DOM snapshot alongside the screenshot (required).
+            # Save lightweight HTML linking screenshot -> post permalink (per user requirement).
             dom_path = out_dir / f"post_{next_index:03d}.html"
             try:
-                html = post.evaluate("el => el ? (el.outerHTML || '') : ''") or ""
-                if isinstance(html, str) and html.strip():
-                    dom_path.write_text(html, encoding="utf-8", errors="ignore")
+                # Try to extract a stable permalink-like URL from within the post DOM.
+                # Keep it best-effort and fast; do NOT block capture if missing.
+                href = ""
+                try:
+                    href = (
+                        post.evaluate(
+                            """(el) => {
+                              try {
+                                if (!el) return '';
+                                const a = el.querySelector('a[href*="story_fbid"],a[href*="/posts/"],a[href*="/permalink/"],a[href*="permalink.php"],a[href*="/story.php"]');
+                                const h = a ? (a.getAttribute('href') || '') : '';
+                                return (h || '').trim();
+                              } catch (e) { return ''; }
+                            }"""
+                        )
+                        or ""
+                    )
+                except Exception:
+                    href = ""
+
+                try:
+                    from urllib.parse import urljoin
+                except Exception:
+                    urljoin = None  # type: ignore
+
+                permalink = ""
+                if isinstance(href, str):
+                    h = href.strip()
+                    if h:
+                        if urljoin is not None:
+                            permalink = urljoin("https://www.facebook.com/", h)
+                        else:
+                            permalink = h if h.startswith("http") else ("https://www.facebook.com/" + h.lstrip("/"))
+
+                img_name = final_path.name
+                title = f"post_{next_index:03d}"
+                # Minimal HTML: no FB markup stored, only a link + local image reference.
+                html = (
+                    "<!doctype html>\n"
+                    "<html lang=\"vi\">\n"
+                    "  <head>\n"
+                    "    <meta charset=\"utf-8\" />\n"
+                    "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n"
+                    f"    <title>{title}</title>\n"
+                    "    <style>body{margin:0;background:#0b0f16;color:#e8eefc;font:14px/1.4 system-ui}a{color:#8ab4ff}img{max-width:100%;height:auto;display:block}</style>\n"
+                    "  </head>\n"
+                    "  <body>\n"
+                    f"    <div style=\"padding:12px\">Permalink: "
+                    + (f"<a href=\"{permalink}\" target=\"_blank\" rel=\"noreferrer\">{permalink}</a>" if permalink else "<em>(không tìm thấy)</em>")
+                    + "</div>\n"
+                    + (f"    <a href=\"{permalink}\" target=\"_blank\" rel=\"noreferrer\"><img src=\"{img_name}\" alt=\"{title}\" /></a>\n" if permalink else f"    <img src=\"{img_name}\" alt=\"{title}\" />\n")
+                    + "  </body>\n"
+                    "</html>\n"
+                )
+                dom_path.write_text(html, encoding="utf-8", errors="ignore")
             except Exception as e:
                 try:
                     log("capture", f"DOM save failed (ignored): posinset={want_pos} err={e}", "WARN")

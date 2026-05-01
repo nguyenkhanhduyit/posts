@@ -163,21 +163,11 @@
         </section>
 
         <section class="card card-wide">
-          <div class="card-title">Logs realtime</div>
-          <div class="hint">Chọn 1 job ở panel “Jobs” để xem logs.</div>
-          <div class="actions" style="margin: 10px 0 12px;">
-            <div class="selected" id="selectedJob" style="flex:1">No job selected</div>
+          <div class="card-title">Logs realtime (theo worker)</div>
+          <div class="hint">
+            Mỗi worker có 1 khung log riêng. Khi keyword đổi trong cùng 1 phiên, log sẽ được giữ lại và nối tiếp (không xoá log cũ).
           </div>
-          <div class="progress" style="margin-bottom: 12px;">
-            <div class="progress-label">
-              <span>Progress</span>
-              <span id="progressText">0/0</span>
-            </div>
-            <div class="progress-bar">
-              <div class="progress-fill" id="progressFill"></div>
-            </div>
-          </div>
-          <pre class="log" id="log"></pre>
+          <div id="logsContainer"></div>
         </section>
       </main>
 
