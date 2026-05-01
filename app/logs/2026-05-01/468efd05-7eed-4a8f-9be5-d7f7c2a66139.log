@@ -1,0 +1,2 @@
+{"ts": "2026-05-01T07:17:21.148748+00:00", "level": "INFO", "jobId": "468efd05-7eed-4a8f-9be5-d7f7c2a66139", "keyword": "khai trương khuyến mãi", "step": "created", "message": "Job created", "data": {"maxPosts": "unlimited"}, "seq": 13608}
+{"ts": "2026-05-01T07:34:18.050902+00:00", "level": "INFO", "jobId": "468efd05-7eed-4a8f-9be5-d7f7c2a66139", "keyword": "khai trương khuyến mãi", "step": "start", "message": "Job started (attempt 1/2)", "data": {"w": 0}, "seq": 14188}

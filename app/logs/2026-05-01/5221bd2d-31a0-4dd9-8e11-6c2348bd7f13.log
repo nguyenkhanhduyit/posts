@@ -1,0 +1,4 @@
+{"ts": "2026-05-01T10:09:33.428602+00:00", "level": "INFO", "jobId": "5221bd2d-31a0-4dd9-8e11-6c2348bd7f13", "keyword": "khai trương hcm", "step": "created", "message": "Job created", "data": {"maxPosts": 10}, "seq": 15731}
+{"ts": "2026-05-01T10:10:03.755915+00:00", "level": "INFO", "jobId": "5221bd2d-31a0-4dd9-8e11-6c2348bd7f13", "keyword": "khai trương hcm", "step": "start", "message": "Job started (attempt 1/2)", "data": {"w": 0}, "seq": 15751}
+{"ts": "2026-05-01T10:10:06.086743+00:00", "level": "INFO", "jobId": "5221bd2d-31a0-4dd9-8e11-6c2348bd7f13", "keyword": "khai trương hcm", "step": "login", "message": "Already logged in (home).", "data": {"w": 0}, "seq": 15752}
+{"ts": "2026-05-01T10:10:06.098125+00:00", "level": "INFO", "jobId": "5221bd2d-31a0-4dd9-8e11-6c2348bd7f13", "keyword": "khai trương hcm", "step": "search", "message": "Searching keyword: \"khai trương hcm\"", "data": {"w": 0}, "seq": 15753}

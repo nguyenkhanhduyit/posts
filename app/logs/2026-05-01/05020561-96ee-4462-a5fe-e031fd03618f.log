@@ -1,0 +1,3 @@
+{"ts": "2026-05-01T09:50:19.894909+00:00", "level": "INFO", "jobId": "05020561-96ee-4462-a5fe-e031fd03618f", "keyword": "khai trương tdm", "step": "created", "message": "Job created", "data": {"maxPosts": 5}, "seq": 15426}
+{"ts": "2026-05-01T09:51:03.549620+00:00", "level": "INFO", "jobId": "05020561-96ee-4462-a5fe-e031fd03618f", "keyword": "khai trương tdm", "step": "start", "message": "Job started (attempt 1/2)", "data": {"w": 0}, "seq": 15466}
+{"ts": "2026-05-01T09:51:05.848269+00:00", "level": "WARN", "jobId": "05020561-96ee-4462-a5fe-e031fd03618f", "keyword": "khai trương tdm", "step": "relaunch", "message": "Closed target detected. Will relaunch + retry. (Page.goto: Connection closed while reading from the driver)", "data": {"w": 0}, "seq": 15467}

@@ -1,0 +1,2 @@
+{"ts": "2026-05-01T04:39:23.199183+00:00", "level": "INFO", "jobId": "5aac4494-9c6e-4b13-8976-7f8dfc808926", "keyword": "khai trương rộn ràng", "step": "created", "message": "Job created", "data": {"maxPosts": 130}, "seq": 12831}
+{"ts": "2026-05-01T04:46:46.723174+00:00", "level": "INFO", "jobId": "5aac4494-9c6e-4b13-8976-7f8dfc808926", "keyword": "khai trương rộn ràng", "step": "start", "message": "Job started (attempt 1/2)", "data": null, "seq": 13113}

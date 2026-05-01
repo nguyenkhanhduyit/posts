@@ -1,0 +1,6 @@
+{"ts": "2026-04-27T15:35:43.657228+00:00", "level": "INFO", "jobId": "58128b36-eaf1-4b5f-ae4f-a9ed7a5d500f", "keyword": "khai truong", "step": "created", "message": "Job created", "data": {"maxPosts": 30}, "seq": 3217}
+{"ts": "2026-04-27T15:35:43.739554+00:00", "level": "INFO", "jobId": "58128b36-eaf1-4b5f-ae4f-a9ed7a5d500f", "keyword": "khai truong", "step": "start", "message": "Job started (attempt 1/2)", "data": null, "seq": 3218}
+{"ts": "2026-04-27T15:35:50.414317+00:00", "level": "INFO", "jobId": "58128b36-eaf1-4b5f-ae4f-a9ed7a5d500f", "keyword": "khai truong", "step": "login", "message": "Already logged in (profile session).", "data": null, "seq": 3219}
+{"ts": "2026-04-27T15:35:51.003791+00:00", "level": "INFO", "jobId": "58128b36-eaf1-4b5f-ae4f-a9ed7a5d500f", "keyword": "khai truong", "step": "search", "message": "Searching keyword: \"khai truong\"", "data": null, "seq": 3220}
+{"ts": "2026-04-27T15:35:55.725609+00:00", "level": "INFO", "jobId": "58128b36-eaf1-4b5f-ae4f-a9ed7a5d500f", "keyword": "khai truong", "step": "capture", "message": "Start capturing up to 30 posts.", "data": null, "seq": 3221}
+{"ts": "2026-04-27T15:35:56.036777+00:00", "level": "INFO", "jobId": "58128b36-eaf1-4b5f-ae4f-a9ed7a5d500f", "keyword": "khai truong", "step": "capture", "message": "Capturing 1/30…", "data": null, "seq": 3222}

@@ -1,0 +1,2 @@
+{"ts": "2026-04-28T16:28:59.350996+00:00", "level": "INFO", "jobId": "bc4ab28c-722b-49d7-9657-2bc1a29c9c2a", "keyword": "khai trương hcm", "step": "created", "message": "Job created", "data": {"maxPosts": 70}, "seq": 6324}
+{"ts": "2026-04-28T16:29:46.849130+00:00", "level": "INFO", "jobId": "bc4ab28c-722b-49d7-9657-2bc1a29c9c2a", "keyword": "khai trương hcm", "step": "start", "message": "Job started (attempt 1/2)", "data": null, "seq": 6386}

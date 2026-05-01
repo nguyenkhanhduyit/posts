@@ -1,0 +1,2 @@
+{"ts": "2026-05-01T04:39:23.219073+00:00", "level": "INFO", "jobId": "1349af08-6c6b-40b3-9130-d15cb8903811", "keyword": "khai trương cửa hàng", "step": "created", "message": "Job created", "data": {"maxPosts": 130}, "seq": 12839}
+{"ts": "2026-05-01T06:29:47.358666+00:00", "level": "INFO", "jobId": "1349af08-6c6b-40b3-9130-d15cb8903811", "keyword": "khai trương cửa hàng", "step": "start", "message": "Job started (attempt 1/2)", "data": {"w": 0}, "seq": 13278}

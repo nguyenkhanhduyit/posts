@@ -1,0 +1,5 @@
+{"ts": "2026-05-01T09:00:25.813555+00:00", "level": "INFO", "jobId": "5963f486-bd60-40ca-8953-61760abab7e9", "keyword": "khai trương tdm", "step": "created", "message": "Job created", "data": {"maxPosts": 5}, "seq": 15016}
+{"ts": "2026-05-01T09:01:49.284622+00:00", "level": "INFO", "jobId": "5963f486-bd60-40ca-8953-61760abab7e9", "keyword": "khai trương tdm", "step": "start", "message": "Job started (attempt 1/2)", "data": {"w": 0}, "seq": 15080}
+{"ts": "2026-05-01T09:01:49.550752+00:00", "level": "INFO", "jobId": "5963f486-bd60-40ca-8953-61760abab7e9", "keyword": "khai trương tdm", "step": "search", "message": "Searching keyword: \"khai trương tdm\"", "data": {"w": 0}, "seq": 15081}
+{"ts": "2026-05-01T09:01:52.472261+00:00", "level": "INFO", "jobId": "5963f486-bd60-40ca-8953-61760abab7e9", "keyword": "khai trương tdm", "step": "capture", "message": "Start capturing up to 5 posts.", "data": {"w": 0}, "seq": 15082}
+{"ts": "2026-05-01T09:01:52.476734+00:00", "level": "INFO", "jobId": "5963f486-bd60-40ca-8953-61760abab7e9", "keyword": "khai trương tdm", "step": "capture", "message": "Output folder: Lan 7 - 1601", "data": {"w": 0}, "seq": 15083}

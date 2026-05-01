@@ -1,0 +1,2 @@
+{"ts": "2026-04-28T16:06:15.436269+00:00", "level": "INFO", "jobId": "9522f09d-cc1d-4767-aaa9-bda85f9850d3", "keyword": "khai trương tdm", "step": "created", "message": "Job created", "data": {"maxPosts": "unlimited"}, "seq": 5636}
+{"ts": "2026-04-28T16:27:27.036117+00:00", "level": "INFO", "jobId": "9522f09d-cc1d-4767-aaa9-bda85f9850d3", "keyword": "khai trương tdm", "step": "start", "message": "Job started (attempt 1/2)", "data": null, "seq": 5988}

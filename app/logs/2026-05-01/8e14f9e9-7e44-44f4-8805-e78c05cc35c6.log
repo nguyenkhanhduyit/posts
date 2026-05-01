@@ -1,0 +1,2 @@
+{"ts": "2026-05-01T09:52:16.215686+00:00", "level": "INFO", "jobId": "8e14f9e9-7e44-44f4-8805-e78c05cc35c6", "keyword": "khai trương hồng phát", "step": "created", "message": "Job created", "data": {"maxPosts": 8}, "seq": 15471}
+{"ts": "2026-05-01T09:54:25.439524+00:00", "level": "INFO", "jobId": "8e14f9e9-7e44-44f4-8805-e78c05cc35c6", "keyword": "khai trương hồng phát", "step": "start", "message": "Job started (attempt 1/2)", "data": {"w": 0}, "seq": 15573}

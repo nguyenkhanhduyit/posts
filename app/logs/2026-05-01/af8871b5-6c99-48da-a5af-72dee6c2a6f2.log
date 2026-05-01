@@ -1,0 +1,2 @@
+{"ts": "2026-05-01T04:39:23.213095+00:00", "level": "INFO", "jobId": "af8871b5-6c99-48da-a5af-72dee6c2a6f2", "keyword": "khai trương hoành tráng", "step": "created", "message": "Job created", "data": {"maxPosts": 130}, "seq": 12837}
+{"ts": "2026-05-01T06:29:42.161177+00:00", "level": "INFO", "jobId": "af8871b5-6c99-48da-a5af-72dee6c2a6f2", "keyword": "khai trương hoành tráng", "step": "start", "message": "Job started (attempt 1/2)", "data": {"w": 1}, "seq": 13271}

@@ -1,0 +1,2 @@
+{"ts": "2026-04-28T15:00:30.793001+00:00", "level": "INFO", "jobId": "d95c6775-2a76-4272-8339-91b6ed6a6c54", "keyword": "khai truong", "step": "created", "message": "Job created", "data": {"maxPosts": 10}, "seq": 5204}
+{"ts": "2026-04-28T15:00:32.299573+00:00", "level": "INFO", "jobId": "d95c6775-2a76-4272-8339-91b6ed6a6c54", "keyword": "khai truong", "step": "start", "message": "Job started (attempt 1/2)", "data": null, "seq": 5206}

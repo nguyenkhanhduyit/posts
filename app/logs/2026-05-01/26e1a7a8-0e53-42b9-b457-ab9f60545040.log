@@ -1,0 +1,2 @@
+{"ts": "2026-05-01T07:56:38.215488+00:00", "level": "INFO", "jobId": "26e1a7a8-0e53-42b9-b457-ab9f60545040", "keyword": "khai trương giảm sốc", "step": "created", "message": "Job created", "data": {"maxPosts": "unlimited"}, "seq": 14196}
+{"ts": "2026-05-01T07:57:47.190441+00:00", "level": "INFO", "jobId": "26e1a7a8-0e53-42b9-b457-ab9f60545040", "keyword": "khai trương giảm sốc", "step": "start", "message": "Job started (attempt 1/2)", "data": {"w": 0}, "seq": 14226}

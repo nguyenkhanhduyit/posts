@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FB Posts Screenshot Tool</title>
+    <link rel="stylesheet" href="/assets/styles.css?v=14" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="logo" aria-hidden="true">FB</div>
+          <div>
+            <div class="title">Posts Screenshot Tool</div>
+            <div class="subtitle">Chụp toàn bộ kết quả theo keyword • Nhiều worker song song • Logs realtime (theo job)</div>
+          </div>
+        </div>
+        <div class="status-pill" id="healthPill">Checking…</div>
+      </header>
+
+      <section class="stats">
+        <div class="stat-tile">
+          <div class="stat-label">Tổng keywords</div>
+          <div class="stat-value" id="statTotal">0</div>
+        </div>
+        <div class="stat-tile glow-blue">
+          <div class="stat-label">Đang chạy</div>
+          <div class="stat-value" id="statRunning">0</div>
+          <div class="stat-sub" id="statRunningKw">—</div>
+        </div>
+        <div class="stat-tile glow-green">
+          <div class="stat-label">Hoàn tất</div>
+          <div class="stat-value" id="statDone">0</div>
+        </div>
+        <div class="stat-tile glow-red">
+          <div class="stat-label">Lỗi</div>
+          <div class="stat-value" id="statError">0</div>
+        </div>
+      </section>
+      <div class="session-notice" id="sessionNotice" style="display:none"></div>
+
+      <main class="grid">
+        <section class="card">
+          <div class="card-title">Tạo jobs</div>
+          <div class="form">
+            <div class="row2">
+              <div class="field">
+                <label>Email / SĐT</label>
+                <input id="email" placeholder="example@gmail.com" autocomplete="username" />
+              </div>
+              <div class="field">
+                <label>Password</label>
+                <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
+                <div class="hint">Để trống để dùng <code>FB_EMAIL</code> + <code>FB_PASSWORD</code> trong <code>app/.env</code>.</div>
+                <label class="chk" title="CHỈ bật nếu bạn chấp nhận ghi plaintext password vào app/.env trên máy bạn">
+                  <input type="checkbox" id="saveSecretsToDotenv" />
+                  <span>Lưu <code>FB_EMAIL</code>/<code>FB_PASSWORD</code> vào <code>app/.env</code></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="actions compact">
+              <label class="chk" title="Bật để chạy Chrome ẩn (headless). Tắt để hiện cửa sổ Chrome.">
+                <input type="checkbox" id="headless" />
+                <span>Ẩn Chrome (headless)</span>
+              </label>
+            </div>
+
+            <div class="row2">
+              <div class="field">
+                <label>Số luồng chạy (workers)</label>
+                <input id="workerCount" type="number" min="1" max="8" step="1" placeholder="VD: 3" />
+                <div class="hint">Tăng để chạy nhiều keyword song song. Khuyến nghị 2–3 (cao quá dễ checkpoint/captcha).</div>
+              </div>
+              <div class="field">
+                <label>Giới hạn tối đa số từ khoá</label>
+                <input id="maxKeywords" type="number" min="1" max="5000" step="1" placeholder="VD: 200" />
+                <div class="hint">
+                  Giới hạn này áp vào số dòng keyword thực tế trong file .txt (bỏ dòng trống). Nếu file nhiều hơn, chương trình sẽ chỉ chạy phần đầu và báo cảnh báo.
+                </div>
+              </div>
+            </div>
+
+            <div class="actions compact">
+              <button class="btn" id="applySettingsBtn" type="button" title="Lưu settings và áp dụng ngay (không cần bấm Start)">
+                Áp dụng settings
+              </button>
+              <div class="hint" style="margin:0">
+                Nút này chỉ lưu cấu hình. Để tăng/giảm luồng ngay, cần đang chạy <code>run.bat</code> (supervisor).
+              </div>
+            </div>
+
+            <div class="row2">
+              <div class="field">
+                <label>Giới hạn số bài chụp</label>
+                <div class="actions compact" style="margin:0">
+                  <label class="chk" title="Bật để chỉ chụp đúng số lượng bài đã nhập. Tắt để chụp tới khi hết bài trong kết quả.">
+                    <input type="checkbox" id="limitEnabled" />
+                    <span>Dùng giới hạn</span>
+                  </label>
+                </div>
+                <div class="hint">Tắt = chụp tới khi hết bài trong kết quả keyword.</div>
+              </div>
+              <div class="field">
+                <label>Số bài tối đa</label>
+                <input id="maxPosts" type="number" min="1" max="20000" step="1" placeholder="VD: 30" />
+                <div class="hint">Chỉ có hiệu lực khi bật “Dùng giới hạn”.</div>
+              </div>
+            </div>
+
+            <div class="row2">
+              <div class="field">
+                <label>Cooldown sau mỗi ảnh (giây)</label>
+                <div class="inline2">
+                  <input id="delayMinSec" type="number" min="0" max="20" step="0.1" placeholder="min" />
+                  <input id="delayMaxSec" type="number" min="0" max="20" step="0.1" placeholder="max" />
+                </div>
+                <div class="hint">Đặt 0/0 để chụp nhanh nhất (rủi ro checkpoint/captcha cao hơn).</div>
+              </div>
+              <div class="field">
+                <label>Cooldown giữa keywords (giây)</label>
+                <div class="inline2">
+                  <input id="betweenKwDelayMinSec" type="number" min="0" max="60" step="0.5" placeholder="min" />
+                  <input id="betweenKwDelayMaxSec" type="number" min="0" max="60" step="0.5" placeholder="max" />
+                </div>
+                <div class="hint">Giảm để chuyển keyword nhanh hơn.</div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>File keywords (.txt trong folder <code>keyword/</code>)</label>
+              <div class="inline2">
+                <select id="keywordFile"></select>
+                <button class="btn" id="reloadKeywordFilesBtn" type="button">Tải lại</button>
+              </div>
+              <div class="hint">
+                Mỗi dòng 1 keyword. Chương trình sẽ tự chụp tới khi hết bài trong kết quả của keyword đó rồi mới chuyển keyword tiếp theo.
+              </div>
+            </div>
+
+            <div class="actions">
+              <button class="btn primary btn-xl" id="startBtn" type="button">Start</button>
+            </div>
+            <div class="error" id="formError" style="display:none"></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-title row-between">
+            <span>Jobs</span>
+            <span class="job-controls">
+              <label class="chk">
+                <input type="checkbox" id="hideFinished" checked />
+                <span>Hide finished</span>
+              </label>
+              <button class="btn" id="toggleShowAllBtn">Show all</button>
+              <button class="btn danger" id="cleanAllBtn" title="Xoá toàn bộ jobs + logs khỏi database">Clean all</button>
+            </span>
+          </div>
+          <div class="hint" id="jobsHint">Showing last 30 jobs</div>
+          <textarea class="jobs-text" id="jobsText" readonly spellcheck="false"></textarea>
+        </section>
+
+        <section class="card card-wide">
+          <div class="card-title">Logs realtime</div>
+          <div class="hint">Chọn 1 job ở panel “Jobs” để xem logs.</div>
+          <div class="actions" style="margin: 10px 0 12px;">
+            <div class="selected" id="selectedJob" style="flex:1">No job selected</div>
+          </div>
+          <div class="progress" style="margin-bottom: 12px;">
+            <div class="progress-label">
+              <span>Progress</span>
+              <span id="progressText">0/0</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="progressFill"></div>
+            </div>
+          </div>
+          <pre class="log" id="log"></pre>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <span>Copyright Nguyễn Khánh Duy IT Nasani 2026</span>
+      </footer>
+    </div>
+
+    <script src="/assets/app.js?v=16"></script>
+  </body>
+</html>
+
