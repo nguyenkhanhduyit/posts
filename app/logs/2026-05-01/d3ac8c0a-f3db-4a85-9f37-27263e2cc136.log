@@ -1,0 +1,4 @@
+{"ts": "2026-05-01T14:36:17.562130+00:00", "level": "INFO", "jobId": "d3ac8c0a-f3db-4a85-9f37-27263e2cc136", "keyword": "khai trương ưu đãi", "step": "created", "message": "Job created", "data": {"maxPosts": "unlimited"}, "seq": 19200}
+{"ts": "2026-05-01T14:39:24.726880+00:00", "level": "INFO", "jobId": "d3ac8c0a-f3db-4a85-9f37-27263e2cc136", "keyword": "khai trương ưu đãi", "step": "start", "message": "Job started (attempt 1/2)", "data": {"w": 1}, "seq": 19625}
+{"ts": "2026-05-01T14:39:29.212949+00:00", "level": "INFO", "jobId": "d3ac8c0a-f3db-4a85-9f37-27263e2cc136", "keyword": "khai trương ưu đãi", "step": "login", "message": "Already logged in (home).", "data": {"w": 1}, "seq": 19626}
+{"ts": "2026-05-01T14:39:29.214069+00:00", "level": "INFO", "jobId": "d3ac8c0a-f3db-4a85-9f37-27263e2cc136", "keyword": "khai trương ưu đãi", "step": "search", "message": "Searching keyword: \"khai trương ưu đãi\"", "data": {"w": 1}, "seq": 19627}

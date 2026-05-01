@@ -641,7 +641,6 @@ def main() -> None:
                     max_posts=int(job.max_posts),
                     delay_min_sec=float(job.delay_min_sec),
                     delay_max_sec=float(job.delay_max_sec),
-                    save_html=bool(int(getattr(job, "save_html", 1) or 1)),
                 )
 
                 # attempt counter for retryable timeouts
@@ -705,7 +704,8 @@ def main() -> None:
                         params,
                         posts_root=posts_root,
                         progress=progress,
-                        log=lambda s, m: jlog(s, m),
+                        # capture_posts may call log(step, msg, level)
+                        log=lambda s, m, lvl="INFO": jlog(s, m, lvl),
                         should_cancel=should_cancel_watchdog,
                         expected_search_url=last_page_url or None,
                     )
@@ -781,32 +781,84 @@ def main() -> None:
                         job_repo.reset_to_pending_for_retry(job_id, msg, worker_id=worker_id)
                         jlog("retry", "Reset job to pending for retry (user-confirmed antiblock).", "WARN")
                     elif decision == "continue":
-                        jlog("antiblock", "User chose continue. Will keep running without reload.", "WARN")
+                        jlog(
+                            "antiblock",
+                            "User chose continue. Will NOT reload. Waiting for you to finish verification on this Chrome window…",
+                            "WARN",
+                        )
                         try:
                             job_repo.clear_checkpoint(job_id)
                         except Exception:
                             pass
-                        # Best-effort: continue the SAME job without relaunch/navigation.
-                        # If this was a false positive, capture can proceed normally.
+
+                        # New behavior: DO NOT attempt capture while we're still on a verification/checkpoint URL.
+                        # Wait until the user finishes verification and the tab returns to a normal FB page,
+                        # then navigate back to the expected search URL and continue capture.
                         try:
-                            saved = capture_posts(
-                                page,
-                                params,
-                                posts_root=posts_root,
-                                progress=progress,
-                                log=lambda s, m: jlog(s, m),
-                                should_cancel=should_cancel_watchdog,
-                                expected_search_url=last_page_url or None,
-                            )
-                            if should_cancel():
-                                jlog("cancel", f"Cancelled. Saved={saved}", "WARN")
-                                job_repo.mark_cancelled(job_id)
+                            t_wait0 = time.time()
+                            last_hint = 0.0
+                            while True:
+                                if shutdown_requested:
+                                    raise SystemExit(0)
+                                if should_cancel():
+                                    jlog("cancel", "Cancelled while waiting for verification.", "WARN")
+                                    job_repo.mark_cancelled(job_id)
+                                    decision = "cancel"
+                                    break
+                                try:
+                                    cur_url = str(page.url or "")
+                                except Exception:
+                                    cur_url = ""
+                                cur_low = cur_url.lower()
+                                in_challenge = any(
+                                    x in cur_low
+                                    for x in [
+                                        "two_step_verification",
+                                        "checkpoint",
+                                        "authentication",
+                                        "/recover",
+                                    ]
+                                )
+                                if not in_challenge:
+                                    break
+                                now = time.time()
+                                if now - last_hint >= 10.0:
+                                    last_hint = now
+                                    jlog(
+                                        "antiblock",
+                                        f"Still on verification page. Please complete it in Chrome. (elapsed={int(now-t_wait0)}s)",
+                                        "WARN",
+                                    )
+                                time.sleep(1.0)
+
+                            if decision == "cancel":
+                                pass
                             else:
-                                progress(saved, -1 if params.max_posts <= 0 else max(saved, params.max_posts))
-                                jlog("done", f"Completed. Saved={saved}")
-                                job_repo.mark_done(job_id)
+                                # Navigate back to search and continue capture.
+                                if last_page_url:
+                                    try:
+                                        jlog("capture", "Verification finished. Returning to search URL…", "INFO")
+                                        page.goto(last_page_url, wait_until="domcontentloaded", timeout=60_000)
+                                    except Exception:
+                                        pass
+                                saved = capture_posts(
+                                    page,
+                                    params,
+                                    posts_root=posts_root,
+                                    progress=progress,
+                                    log=lambda s, m, lvl="INFO": jlog(s, m, lvl),
+                                    should_cancel=should_cancel_watchdog,
+                                    expected_search_url=last_page_url or None,
+                                )
+                                if should_cancel():
+                                    jlog("cancel", f"Cancelled. Saved={saved}", "WARN")
+                                    job_repo.mark_cancelled(job_id)
+                                else:
+                                    progress(saved, -1 if params.max_posts <= 0 else max(saved, params.max_posts))
+                                    jlog("done", f"Completed. Saved={saved}")
+                                    job_repo.mark_done(job_id)
                         except CaptchaOrCheckpointDetected as e2:
-                            # If it triggers again, loop will catch and prompt UI again.
+                            # If it triggers again, we'll prompt UI again.
                             raise e2
                         except Exception as e2:
                             jlog("error", f"Continue-after-checkpoint failed: {e2}", "ERROR")
@@ -834,18 +886,11 @@ def main() -> None:
 
                 except PWError as e:
                     # If Chrome/profile/context got closed (user closed window, crash, etc.),
-                    # relaunch and retry once (within max_attempts).
                     if _is_target_closed_error(e):
-                        jlog("relaunch", f"Browser/page closed unexpectedly. Will relaunch + retry. ({e})", "WARN")
-                        time.sleep(1.0)
-                        relaunch()
-                        if job.attempt < job.max_attempts and not should_cancel():
-                            job_repo.reset_to_pending_for_retry(
-                                job_id, f"Browser/page closed: {e}", worker_id=worker_id
-                            )
-                            jlog("retry", "Reset job to pending for retry (closed target).", "WARN")
-                        else:
-                            job_repo.mark_error(job_id, f"Browser/page closed: {e}")
+                        # User requirement: do NOT relaunch/retry when terminal/Chrome closes.
+                        # Treat this as a terminal stop / Chrome crash and end the job.
+                        jlog("error", f"Browser/page closed unexpectedly. Stop job. ({e})", "ERROR")
+                        job_repo.mark_error(job_id, f"Browser/page closed: {e}")
                     else:
                         jlog(
                             "error",
@@ -857,15 +902,9 @@ def main() -> None:
 
                 except Exception as e:
                     if _is_target_closed_error(e):
-                        # This is not a "real" app error; it usually means Chrome closed/crashed.
-                        jlog("relaunch", f"Closed target detected. Will relaunch + retry. ({e})", "WARN")
-                        time.sleep(1.0)
-                        relaunch()
-                        if job.attempt < job.max_attempts and not should_cancel():
-                            job_repo.reset_to_pending_for_retry(job_id, f"Closed target: {e}", worker_id=worker_id)
-                            jlog("retry", "Reset job to pending for retry (closed target).", "WARN")
-                        else:
-                            job_repo.mark_error(job_id, f"Closed target: {e}")
+                        # User requirement: do NOT relaunch/retry when terminal/Chrome closes.
+                        jlog("error", f"Closed target detected. Stop job. ({e})", "ERROR")
+                        job_repo.mark_error(job_id, f"Closed target: {e}")
                     elif "login failed" in str(e).lower():
                         # Don't retry login-failed endlessly; often caused by 2FA/captcha.
                         job_repo.mark_error(job_id, str(e))

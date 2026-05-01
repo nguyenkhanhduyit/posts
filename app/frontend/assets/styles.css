@@ -376,10 +376,22 @@ select:focus{
   font-size:12px;
   line-height:1.45;
   color: var(--text-soft);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .log::-webkit-scrollbar{width:10px}
 .log::-webkit-scrollbar-thumb{background: rgba(255,255,255,.10);border-radius:999px;border:2px solid rgba(0,0,0,0)}
 .log::-webkit-scrollbar-track{background: rgba(255,255,255,.03);border-radius:999px}
+
+/* Logs panels layout: multi-column grid (horizontal columns) */
+#logsContainer{
+  display:grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap:12px;
+}
 .footer{
   margin-top:16px;
   color:rgba(207,226,255,.70);

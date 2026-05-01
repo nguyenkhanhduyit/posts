@@ -1,0 +1,6 @@
+2026/05/01-21:52:32.301 1064 Reusing MANIFEST C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w2\Default\Local Storage\leveldb/MANIFEST-000001
+2026/05/01-21:52:32.331 1064 Recovering log #3
+2026/05/01-21:52:32.340 1064 Reusing old log C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w2\Default\Local Storage\leveldb/000003.log 
+2026/05/01-21:59:34.209 1064 Level-0 table #5: started
+2026/05/01-21:59:34.222 1064 Level-0 table #5: 21774 bytes OK
+2026/05/01-21:59:34.224 1064 Delete type=0 #3

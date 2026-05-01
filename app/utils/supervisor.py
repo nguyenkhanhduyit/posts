@@ -114,6 +114,8 @@ def main() -> int:
     # Initial worker count (can be overridden at runtime via UI settings stored in SQLite worker_state)
     worker_count = max(1, int(env.get("WORKER_COUNT", "1")))
     shutdown_requested = False
+    backend: subprocess.Popen | None = None
+    workers: list[subprocess.Popen] = []
 
     def request_shutdown(reason: str) -> None:
         nonlocal shutdown_requested
@@ -122,6 +124,48 @@ def main() -> int:
         shutdown_requested = True
         try:
             print(f"\n[supervisor] Shutdown requested: {reason}\n")
+        except Exception:
+            pass
+        # IMPORTANT (Windows): terminal-close gives a short time budget.
+        # Stop children immediately to prevent any respawn/relaunch during shutdown.
+        try:
+            procs: list[subprocess.Popen] = []
+            if backend is not None:
+                procs.append(backend)
+            procs.extend(list(workers))
+            for p in procs:
+                try:
+                    if p is not None and p.poll() is None:
+                        if os.name == "nt":
+                            p.send_signal(signal.CTRL_BREAK_EVENT)
+                        else:
+                            p.terminate()
+                except Exception:
+                    pass
+            # Hard-kill our own process trees immediately (prevents "last second" chrome relaunch).
+            if os.name == "nt":
+                for p in procs:
+                    try:
+                        if p is not None and p.poll() is None and getattr(p, "pid", 0):
+                            subprocess.run(
+                                ["taskkill", "/PID", str(p.pid), "/T", "/F"],
+                                check=False,
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                            )
+                    except Exception:
+                        pass
+            # Also kill chrome tree best-effort (in case worker is mid-launch).
+            if os.name == "nt":
+                try:
+                    subprocess.run(
+                        ["taskkill", "/IM", "chrome.exe", "/T", "/F"],
+                        check=False,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -353,7 +397,6 @@ def main() -> int:
 
     backend = _popen([sys.executable, "-m", "app.backend.app"], env=child_env)
     time.sleep(1.2)
-    workers: list[subprocess.Popen] = []
 
     ui_url = f"http://{host}:{port}"
 
@@ -428,6 +471,8 @@ def main() -> int:
 
                 # Restart workers that exited.
                 for i, w in enumerate(list(workers)):
+                    if shutdown_requested:
+                        break
                     if w.poll() is None:
                         continue
                     code = w.returncode
@@ -437,9 +482,10 @@ def main() -> int:
                     elif code is not None and code != 0:
                         print(f"[supervisor] Worker w{i} exited with code {code}. Restarting in 3s...")
                         time.sleep(3.0)
-                    wenv = child_env.copy()
-                    wenv["WORKER_ID"] = str(i)
-                    workers[i] = _popen([sys.executable, "-m", "app.worker.runner"], env=wenv)
+                    if not shutdown_requested:
+                        wenv = child_env.copy()
+                        wenv["WORKER_ID"] = str(i)
+                        workers[i] = _popen([sys.executable, "-m", "app.worker.runner"], env=wenv)
 
             if backend.poll() is not None:
                 print("\n[supervisor] Backend exited. Stopping worker...")

@@ -39,7 +39,6 @@ _STATE_KEY_DELAY_MIN_SEC = "delay_min_sec"
 _STATE_KEY_DELAY_MAX_SEC = "delay_max_sec"
 _STATE_KEY_BETWEEN_KW_DELAY_MIN_SEC = "between_kw_delay_min_sec"
 _STATE_KEY_BETWEEN_KW_DELAY_MAX_SEC = "between_kw_delay_max_sec"
-_STATE_KEY_SAVE_HTML = "save_html"
 
 
 def _get_state_int(key: str, default: int) -> int:
@@ -161,7 +160,6 @@ def get_settings() -> JSONResponse:
     keyword_file = _get_state_str(_STATE_KEY_KEYWORD_FILE, "").strip()
     email = _get_state_str(_STATE_KEY_EMAIL, "").strip()
     save_secrets_to_dotenv = _get_state_bool(_STATE_KEY_SAVE_SECRETS_TO_DOTENV, False)
-    save_html = _get_state_bool(_STATE_KEY_SAVE_HTML, True)
     delay_min_sec = float(_get_state_str(_STATE_KEY_DELAY_MIN_SEC, str(getattr(settings, "default_delay_min_sec", 1.0))) or "1")
     delay_max_sec = float(_get_state_str(_STATE_KEY_DELAY_MAX_SEC, str(getattr(settings, "default_delay_max_sec", 3.0))) or "3")
     bkw_min_sec = float(
@@ -188,7 +186,6 @@ def get_settings() -> JSONResponse:
             "keywordFile": keyword_file,
             "email": email,
             "saveSecretsToDotenv": save_secrets_to_dotenv,
-            "saveHtml": save_html,
             "delayMinSec": delay_min_sec,
             "delayMaxSec": delay_max_sec,
             "betweenKwDelayMinSec": bkw_min_sec,
@@ -244,7 +241,6 @@ def set_settings(payload: dict) -> JSONResponse:
         save_secrets_to_dotenv = bool(
             payload.get("saveSecretsToDotenv", _get_state_bool(_STATE_KEY_SAVE_SECRETS_TO_DOTENV, False))
         )
-        save_html = bool(payload.get("saveHtml", _get_state_bool(_STATE_KEY_SAVE_HTML, True)))
         if save_secrets_to_dotenv and password.strip() == "":
             raise ValueError("Bật “Lưu FB_EMAIL/FB_PASSWORD vào app/.env” nhưng đang để trống password.")
 
@@ -310,11 +306,6 @@ def set_settings(payload: dict) -> JSONResponse:
     _set_state_str(_STATE_KEY_KEYWORD_FILE, keyword_file)
     _set_state_str(_STATE_KEY_EMAIL, email)
     _set_state_bool(_STATE_KEY_SAVE_SECRETS_TO_DOTENV, save_secrets_to_dotenv)
-    _set_state_bool(_STATE_KEY_SAVE_HTML, save_html)
-    try:
-        job_repo.set_save_html_for_active(save_html)
-    except Exception:
-        pass
     _set_state_str(_STATE_KEY_DELAY_MIN_SEC, str(dmin))
     _set_state_str(_STATE_KEY_DELAY_MAX_SEC, str(dmax))
     _set_state_str(_STATE_KEY_BETWEEN_KW_DELAY_MIN_SEC, str(bmin))
@@ -340,7 +331,6 @@ def set_settings(payload: dict) -> JSONResponse:
             "keywordFile": keyword_file,
             "email": email,
             "saveSecretsToDotenv": save_secrets_to_dotenv,
-            "saveHtml": save_html,
             "delayMinSec": dmin,
             "delayMaxSec": dmax,
             "betweenKwDelayMinSec": bmin,
@@ -434,8 +424,6 @@ def start_job(payload: dict) -> JSONResponse:
             or "2"
         )
 
-        # Save DOM HTML snapshot per-post (post_###.html) toggle
-        save_html = _get_state_bool(_STATE_KEY_SAVE_HTML, True)
 
         # Allow credentials from .env when UI leaves blank
         if not email:
@@ -483,21 +471,27 @@ def start_job(payload: dict) -> JSONResponse:
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # By default, do NOT hard-assign jobs to specific workers.
+    # Hard assignment can cause idle workers (e.g. w2) while pending jobs are stuck on w0/w1.
+    # Enable strict assignment with ASSIGN_JOBS_TO_WORKERS=1 if you really want deterministic sharding.
+    assign_jobs = (os.getenv("ASSIGN_JOBS_TO_WORKERS", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
+    assigned_worker_ids = None
+    if assign_jobs:
+        wc = max(1, int(_get_state_int(_STATE_KEY_WORKER_COUNT, 1)))
+        assigned_worker_ids = [(i % wc) for i in range(len(keywords))]
+
     job_ids = job_repo.create_jobs(
         email=email,
         password_enc=password,
         keywords=keywords,
-        assigned_worker_ids=(
-            (lambda wc: [(i % wc) for i in range(len(keywords))])(max(1, int(_get_state_int(_STATE_KEY_WORKER_COUNT, 1))))
-        ),
+        assigned_worker_ids=assigned_worker_ids,
         headless=headless,
-        save_html=save_html,
         max_posts=max_posts,
         delay_min_sec=delay_min,
         delay_max_sec=delay_max,
         between_keywords_delay_min_sec=bmin,
         between_keywords_delay_max_sec=bmax,
-        max_attempts=2,
+        max_attempts=1,
     )
     for jid, kw in zip(job_ids, keywords):
         logger.log(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+import os
 from dataclasses import dataclass
 from typing import Any, Iterable, Optional
 
@@ -31,7 +32,6 @@ class JobRow:
     attempt: int
     max_attempts: int
     headless: int
-    save_html: int = 1
     checkpoint_pending: int = 0
     checkpoint_message: Optional[str] = None
     checkpoint_decision: Optional[str] = None
@@ -42,10 +42,16 @@ class JobRow:
 
 def _row_to_job(r: sqlite3.Row) -> JobRow:
     d = dict(r)
+    # Backward/forward compatibility:
+    # The DB may contain extra columns from older versions (e.g. save_html).
+    # JobRow should ignore unknown keys to avoid crashing workers.
+    try:
+        d.pop("save_html", None)
+    except Exception:
+        pass
     d.setdefault("retry_worker_id", None)
     d.setdefault("last_worker_id", None)
     d.setdefault("assigned_worker_id", None)
-    d.setdefault("save_html", 1)
     d.setdefault("checkpoint_pending", 0)
     d.setdefault("checkpoint_message", None)
     d.setdefault("checkpoint_decision", None)
@@ -69,8 +75,7 @@ class JobRepo:
         delay_max_sec: float,
         between_keywords_delay_min_sec: float,
         between_keywords_delay_max_sec: float,
-        save_html: bool = True,
-        max_attempts: int = 2,
+        max_attempts: int = 1,
     ) -> list[str]:
         ids: list[str] = []
         with self.conn:
@@ -89,7 +94,6 @@ class JobRepo:
                     INSERT INTO jobs(
                       id, keyword, email, password_enc,
                       headless,
-                      save_html,
                       max_posts, delay_min_sec, delay_max_sec,
                       between_keywords_delay_min_sec, between_keywords_delay_max_sec,
                       status, progress_current, progress_total,
@@ -97,7 +101,7 @@ class JobRepo:
                       last_error, cancel_requested, attempt, max_attempts,
                       assigned_worker_id
                     )
-                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, NULL, NULL, NULL, 0, 0, ?, ?);
+                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, NULL, NULL, NULL, 0, 0, ?, ?);
                     """,
                     (
                         job_id,
@@ -105,7 +109,6 @@ class JobRepo:
                         email,
                         password_enc,
                         1 if headless else 0,
-                        1 if save_html else 0,
                         max_posts,
                         delay_min_sec,
                         delay_max_sec,
@@ -145,19 +148,6 @@ class JobRepo:
                 """,
                 (str(message or "")[:2000], job_id),
             )
-
-    def set_save_html_for_active(self, save_html: bool) -> int:
-        """
-        Apply setting to all jobs that haven't finished yet.
-        (So "Áp dụng settings" affects the whole run, not only newly created jobs.)
-        """
-        v = 1 if bool(save_html) else 0
-        with self.conn:
-            cur = self.conn.execute(
-                "UPDATE jobs SET save_html=? WHERE status IN ('pending','running');",
-                (v,),
-            )
-            return int(cur.rowcount or 0)
 
     def clear_checkpoint(self, job_id: str) -> None:
         with self.conn:
@@ -221,21 +211,49 @@ class JobRepo:
         """
         now = utc_now_iso()
         wid = str(int(worker_id))
+        # Severe-stall fix:
+        # Old versions hard-assigned jobs to workers (assigned_worker_id=i%workerCount).
+        # If worker_count changes, a worker crashes, or assignments are uneven, the queue can stall:
+        # pending jobs exist but no eligible worker claims them.
+        #
+        # Default: allow stealing assigned jobs so the system always progresses.
+        # Set ALLOW_STEAL_ASSIGNED_JOBS=0 to restore strict assignment behavior.
+        allow_steal = (os.getenv("ALLOW_STEAL_ASSIGNED_JOBS", "1") or "1").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         with self.conn:
-            row = self.conn.execute(
-                """
-                SELECT * FROM jobs
-                WHERE status = 'pending' AND cancel_requested = 0
-                  AND (retry_worker_id IS NULL OR retry_worker_id = ?)
-                  AND (assigned_worker_id IS NULL OR assigned_worker_id = ? OR retry_worker_id = ?)
-                ORDER BY
-                  CASE WHEN retry_worker_id = ? THEN 0 ELSE 1 END,
-                  created_at ASC,
-                  rowid ASC
-                LIMIT 1;
-                """,
-                (wid, wid, wid, wid),
-            ).fetchone()
+            if allow_steal:
+                row = self.conn.execute(
+                    """
+                    SELECT * FROM jobs
+                    WHERE status = 'pending' AND cancel_requested = 0
+                      AND (retry_worker_id IS NULL OR retry_worker_id = ?)
+                    ORDER BY
+                      CASE WHEN retry_worker_id = ? THEN 0 ELSE 1 END,
+                      created_at ASC,
+                      rowid ASC
+                    LIMIT 1;
+                    """,
+                    (wid, wid),
+                ).fetchone()
+            else:
+                row = self.conn.execute(
+                    """
+                    SELECT * FROM jobs
+                    WHERE status = 'pending' AND cancel_requested = 0
+                      AND (retry_worker_id IS NULL OR retry_worker_id = ?)
+                      AND (assigned_worker_id IS NULL OR assigned_worker_id = ? OR retry_worker_id = ?)
+                    ORDER BY
+                      CASE WHEN retry_worker_id = ? THEN 0 ELSE 1 END,
+                      created_at ASC,
+                      rowid ASC
+                    LIMIT 1;
+                    """,
+                    (wid, wid, wid, wid),
+                ).fetchone()
             if not row:
                 return None
             job_id = row["id"]

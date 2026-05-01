@@ -48,7 +48,6 @@ class RunParams:
     max_posts: int
     delay_min_sec: float
     delay_max_sec: float
-    save_html: bool = True
 
 
 RECENT_POSTS_FILTERS = (
@@ -2143,6 +2142,9 @@ def capture_posts(
     last_reload_at = 0.0
     last_pos = 0
     stall_rounds = 0
+    stuck_same_pos_rounds = 0
+    last_want_pos = None
+    last_saved_count = 0
 
     def _scroll_to_top_results() -> None:
         """
@@ -2528,8 +2530,27 @@ def capture_posts(
             # If we stall, end-of-results / stall logic below will decide when to stop.
 
             want_pos = last_pos + 1
+            # If we keep trying to capture the same posinset but never manage to save,
+            # we should treat it as end-of-results (FB sometimes keeps showing a non-progressing tail).
+            if last_want_pos == want_pos and saved == last_saved_count:
+                stuck_same_pos_rounds += 1
+            else:
+                stuck_same_pos_rounds = 0
+            last_want_pos = want_pos
+            last_saved_count = saved
             total_txt = "∞" if unlimited else str(params.max_posts)
             log("capture", f"Capturing posinset={want_pos} ({saved+1}/{total_txt})…")
+
+            if unlimited and stuck_same_pos_rounds >= 5 and (_at_bottom_hint() or _end_marker_present()):
+                try:
+                    log(
+                        "capture",
+                        f"Stuck at posinset={want_pos} for {stuck_same_pos_rounds} rounds near end marker/bottom. Treat as end of results. Stopping.",
+                        "INFO",
+                    )
+                except Exception:
+                    pass
+                break
 
             post = _find_post_by_pos(want_pos)
             if post is None:
@@ -2676,7 +2697,8 @@ def capture_posts(
                 pass
 
             # Expand see more within the post (DOM-based).
-            # IMPORTANT: do not screenshot unless expansion succeeded or no see-more exists.
+            # IMPORTANT: best-effort only.
+            # Even if expanding fails, still take a screenshot (better to save partial content than skip the post).
             try:
                 _expand_see_more(post, page)
             except ElementTimeout as e:
@@ -2701,7 +2723,7 @@ def capture_posts(
                         left = 0
                     log(
                         "capture",
-                        f'Expand "Xem thêm" failed; skip screenshot and retry. posinset={want_pos} see_more_candidates={left} err={e}',
+                        f'Expand "Xem thêm" failed; will still screenshot. posinset={want_pos} see_more_candidates={left} err={e}',
                         "WARN",
                     )
                 except Exception:
@@ -2716,13 +2738,11 @@ def capture_posts(
                 except Exception as e2:
                     log(
                         "capture",
-                        f'Expand "Xem thêm" still failing; skip screenshot this round. posinset={want_pos} err={e2}',
+                        f'Expand "Xem thêm" still failing; will screenshot anyway. posinset={want_pos} err={e2}',
                         "WARN",
                     )
-                    continue
             except Exception as e:
-                log("capture", f'Expand "Xem thêm" error; skip screenshot this round. posinset={want_pos} err={e}', "WARN")
-                continue
+                log("capture", f'Expand "Xem thêm" error; will screenshot anyway. posinset={want_pos} err={e}', "WARN")
 
             # Wait a bit for media/layout; keep it short to preserve speed.
             try:
@@ -2732,68 +2752,7 @@ def capture_posts(
                 pass
 
             final_path = out_dir / f"post_{next_index:03d}.png"
-            if bool(getattr(params, "save_html", True)):
-                # Optional: save lightweight HTML next to screenshot.
-                dom_path = out_dir / f"post_{next_index:03d}.html"
-                try:
-                    # Try to extract a stable permalink-like URL from within the post DOM.
-                    href = ""
-                    try:
-                        href = (
-                            post.evaluate(
-                                """(el) => {
-                                  try {
-                                    if (!el) return '';
-                                    const a = el.querySelector('a[href*="story_fbid"],a[href*="/posts/"],a[href*="/permalink/"],a[href*="permalink.php"],a[href*="/story.php"]');
-                                    const h = a ? (a.getAttribute('href') || '') : '';
-                                    return (h || '').trim();
-                                  } catch (e) { return ''; }
-                                }"""
-                            )
-                            or ""
-                        )
-                    except Exception:
-                        href = ""
-
-                    try:
-                        from urllib.parse import urljoin
-                    except Exception:
-                        urljoin = None  # type: ignore
-
-                    permalink = ""
-                    if isinstance(href, str):
-                        h = href.strip()
-                        if h:
-                            if urljoin is not None:
-                                permalink = urljoin("https://www.facebook.com/", h)
-                            else:
-                                permalink = h if h.startswith("http") else ("https://www.facebook.com/" + h.lstrip("/"))
-
-                    img_name = final_path.name
-                    title = f"post_{next_index:03d}"
-                    html = (
-                        "<!doctype html>\n"
-                        "<html lang=\"vi\">\n"
-                        "  <head>\n"
-                        "    <meta charset=\"utf-8\" />\n"
-                        "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n"
-                        f"    <title>{title}</title>\n"
-                        "    <style>body{margin:0;background:#0b0f16;color:#e8eefc;font:14px/1.4 system-ui}a{color:#8ab4ff}img{max-width:100%;height:auto;display:block}</style>\n"
-                        "  </head>\n"
-                        "  <body>\n"
-                        f"    <div style=\"padding:12px\">Permalink: "
-                        + (f"<a href=\"{permalink}\" target=\"_blank\" rel=\"noreferrer\">{permalink}</a>" if permalink else "<em>(không tìm thấy)</em>")
-                        + "</div>\n"
-                        + (f"    <a href=\"{permalink}\" target=\"_blank\" rel=\"noreferrer\"><img src=\"{img_name}\" alt=\"{title}\" /></a>\n" if permalink else f"    <img src=\"{img_name}\" alt=\"{title}\" />\n")
-                        + "  </body>\n"
-                        "</html>\n"
-                    )
-                    dom_path.write_text(html, encoding="utf-8", errors="ignore")
-                except Exception as e:
-                    try:
-                        log("capture", f"DOM save failed (ignored): posinset={want_pos} err={e}", "WARN")
-                    except Exception:
-                        pass
+            # HTML saving removed by user request: only save .png screenshots.
             try:
                 post.screenshot(path=str(final_path), timeout=90_000)
             except Exception as e:
