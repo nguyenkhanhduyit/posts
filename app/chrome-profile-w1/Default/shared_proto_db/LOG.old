@@ -1,5 +1,3 @@
-2026/05/01-21:52:33.365 6a78 Reusing MANIFEST C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w1\Default\shared_proto_db/MANIFEST-000001
-2026/05/01-21:52:33.365 6a78 Recovering log #3
-2026/05/01-21:52:33.366 6a78 Level-0 table #3: started
-2026/05/01-21:52:33.380 6a78 Level-0 table #3: 114345 bytes OK
-2026/05/01-21:52:33.383 6a78 Delete type=0 #3
+2026/05/01-22:51:33.418 59e0 Reusing MANIFEST C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w1\Default\shared_proto_db/MANIFEST-000001
+2026/05/01-22:51:33.419 59e0 Recovering log #4
+2026/05/01-22:51:33.419 59e0 Reusing old log C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w1\Default\shared_proto_db/000004.log 

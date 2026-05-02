@@ -1,9 +1,27 @@
-2026/05/01-22:06:17.520 2814 Reusing MANIFEST C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w2\Default\Local Storage\leveldb/MANIFEST-000001
-2026/05/01-22:06:17.537 2814 Recovering log #4
-2026/05/01-22:06:17.542 2814 Reusing old log C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w2\Default\Local Storage\leveldb/000004.log 
-2026/05/01-22:08:19.806 7db4 Level-0 table #8: started
-2026/05/01-22:08:19.828 7db4 Level-0 table #8: 33352 bytes OK
-2026/05/01-22:08:19.836 7db4 Delete type=0 #4
-2026/05/01-22:13:19.798 7db4 Level-0 table #10: started
-2026/05/01-22:13:19.806 7db4 Level-0 table #10: 36607 bytes OK
-2026/05/01-22:13:19.808 7db4 Delete type=0 #7
+2026/05/02-02:07:37.557 6014 Reusing MANIFEST C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w2\Default\Local Storage\leveldb/MANIFEST-000001
+2026/05/02-02:07:37.578 6014 Recovering log #26
+2026/05/02-02:07:37.583 6014 Reusing old log C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w2\Default\Local Storage\leveldb/000026.log 
+2026/05/02-02:08:37.604 6678 Level-0 table #31: started
+2026/05/02-02:08:37.621 6678 Level-0 table #31: 24692 bytes OK
+2026/05/02-02:08:37.623 6678 Delete type=0 #26
+2026/05/02-02:15:39.436 6678 Level-0 table #33: started
+2026/05/02-02:15:39.452 6678 Level-0 table #33: 29516 bytes OK
+2026/05/02-02:15:39.454 6678 Delete type=0 #30
+2026/05/02-02:28:39.446 6014 Level-0 table #35: started
+2026/05/02-02:28:39.453 6014 Level-0 table #35: 39127 bytes OK
+2026/05/02-02:28:39.464 6014 Delete type=0 #32
+2026/05/02-02:34:39.460 6678 Level-0 table #37: started
+2026/05/02-02:34:39.470 6678 Level-0 table #37: 33754 bytes OK
+2026/05/02-02:34:39.478 6678 Delete type=0 #34
+2026/05/02-02:34:39.479 6678 Compacting 4@0 + 1@1 files
+2026/05/02-02:34:39.491 6678 Generated table #38@0: 569 keys, 61443 bytes
+2026/05/02-02:34:39.491 6678 Compacted 4@0 + 1@1 files => 61443 bytes
+2026/05/02-02:34:39.491 6678 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/05/02-02:34:39.494 6678 Delete type=2 #28
+2026/05/02-02:34:39.494 6678 Delete type=2 #31
+2026/05/02-02:34:39.495 6678 Delete type=2 #33
+2026/05/02-02:34:39.495 6678 Delete type=2 #35
+2026/05/02-02:34:39.495 6678 Delete type=2 #37
+2026/05/02-04:13:39.435 6678 Level-0 table #40: started
+2026/05/02-04:13:39.450 6678 Level-0 table #40: 8193 bytes OK
+2026/05/02-04:13:39.451 6678 Delete type=0 #36

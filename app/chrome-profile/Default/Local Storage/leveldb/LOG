@@ -1,11 +1,90 @@
-2026/05/01-22:06:18.790 7d6c Reusing MANIFEST C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile\Default\Local Storage\leveldb/MANIFEST-000001
-2026/05/01-22:06:18.812 7d6c Recovering log #90
-2026/05/01-22:06:18.819 7d6c Reusing old log C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile\Default\Local Storage\leveldb/000090.log 
-2026/05/01-22:08:21.028 7d6c Level-0 table #93: started
-2026/05/01-22:08:21.042 7d6c Level-0 table #93: 26707 bytes OK
-2026/05/01-22:08:21.044 7d6c Delete type=0 #90
-2026/05/01-22:21:21.018 6888 Level-0 table #95: started
-2026/05/01-22:21:21.027 6888 Level-0 table #95: 53664 bytes OK
-2026/05/01-22:21:21.029 6888 Delete type=0 #92
-2026/05/01-22:31:47.811 7d6c Level-0 table #97: started
-2026/05/01-22:31:47.819 7d6c Level-0 table #97: 20982 bytes OK
+2026/05/01-22:51:33.840 9ea8 Reusing MANIFEST C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile\Default\Local Storage\leveldb/MANIFEST-000001
+2026/05/01-22:51:33.851 9ea8 Recovering log #102
+2026/05/01-22:51:33.867 9ea8 Reusing old log C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile\Default\Local Storage\leveldb/000102.log 
+2026/05/01-22:58:39.891 4354 Level-0 table #106: started
+2026/05/01-22:58:39.909 4354 Level-0 table #106: 33908 bytes OK
+2026/05/01-22:58:39.911 4354 Delete type=0 #102
+2026/05/01-23:11:39.897 4354 Level-0 table #108: started
+2026/05/01-23:11:39.909 4354 Level-0 table #108: 29799 bytes OK
+2026/05/01-23:11:39.914 4354 Delete type=0 #105
+2026/05/01-23:11:39.915 9ea8 Compacting 4@0 + 1@1 files
+2026/05/01-23:11:39.928 9ea8 Generated table #109@0: 43 keys, 28880 bytes
+2026/05/01-23:11:39.929 9ea8 Compacted 4@0 + 1@1 files => 28880 bytes
+2026/05/01-23:11:39.930 9ea8 compacted to: files[ 0 1 0 0 0 0 0 ]
+2026/05/01-23:11:39.931 9ea8 Delete type=2 #98
+2026/05/01-23:11:39.931 9ea8 Delete type=2 #100
+2026/05/01-23:11:39.931 9ea8 Delete type=2 #103
+2026/05/01-23:11:39.931 9ea8 Delete type=2 #106
+2026/05/01-23:11:39.931 9ea8 Delete type=2 #108
+2026/05/01-23:23:39.899 4354 Level-0 table #111: started
+2026/05/01-23:23:39.906 4354 Level-0 table #111: 30429 bytes OK
+2026/05/01-23:23:39.908 4354 Delete type=0 #107
+2026/05/01-23:38:39.894 4354 Level-0 table #113: started
+2026/05/01-23:38:39.905 4354 Level-0 table #113: 49991 bytes OK
+2026/05/01-23:38:39.907 4354 Delete type=0 #110
+2026/05/01-23:42:39.887 4354 Level-0 table #115: started
+2026/05/01-23:42:39.903 4354 Level-0 table #115: 30947 bytes OK
+2026/05/01-23:42:39.905 4354 Delete type=0 #112
+2026/05/01-23:54:39.934 4354 Level-0 table #117: started
+2026/05/01-23:54:39.958 4354 Level-0 table #117: 147260 bytes OK
+2026/05/01-23:54:39.962 4354 Delete type=0 #114
+2026/05/01-23:54:39.963 9ea8 Compacting 4@0 + 1@1 files
+2026/05/01-23:54:40.034 9ea8 Generated table #118@0: 70 keys, 162210 bytes
+2026/05/01-23:54:40.034 9ea8 Compacted 4@0 + 1@1 files => 162210 bytes
+2026/05/01-23:54:40.035 9ea8 compacted to: files[ 0 1 0 0 0 0 0 ]
+2026/05/01-23:54:40.036 9ea8 Delete type=2 #109
+2026/05/01-23:54:40.037 9ea8 Delete type=2 #111
+2026/05/01-23:54:40.037 9ea8 Delete type=2 #113
+2026/05/01-23:54:40.037 9ea8 Delete type=2 #115
+2026/05/01-23:54:40.037 9ea8 Delete type=2 #117
+2026/05/02-00:02:39.894 9ea8 Level-0 table #120: started
+2026/05/02-00:02:39.900 9ea8 Level-0 table #120: 30621 bytes OK
+2026/05/02-00:02:39.902 9ea8 Delete type=0 #116
+2026/05/02-00:09:39.901 4354 Level-0 table #122: started
+2026/05/02-00:09:39.935 4354 Level-0 table #122: 35542 bytes OK
+2026/05/02-00:09:39.937 4354 Delete type=0 #119
+2026/05/02-00:33:39.898 9ea8 Level-0 table #124: started
+2026/05/02-00:33:39.908 9ea8 Level-0 table #124: 53649 bytes OK
+2026/05/02-00:33:39.911 9ea8 Delete type=0 #121
+2026/05/02-00:39:39.907 4354 Level-0 table #126: started
+2026/05/02-00:39:39.914 4354 Level-0 table #126: 47004 bytes OK
+2026/05/02-00:39:39.915 4354 Delete type=0 #123
+2026/05/02-00:39:39.917 9ea8 Compacting 4@0 + 1@1 files
+2026/05/02-00:39:39.930 9ea8 Generated table #127@0: 60 keys, 55211 bytes
+2026/05/02-00:39:39.930 9ea8 Compacted 4@0 + 1@1 files => 55211 bytes
+2026/05/02-00:39:39.931 9ea8 compacted to: files[ 0 1 0 0 0 0 0 ]
+2026/05/02-00:39:39.933 9ea8 Delete type=2 #118
+2026/05/02-00:39:39.934 9ea8 Delete type=2 #120
+2026/05/02-00:39:39.935 9ea8 Delete type=2 #122
+2026/05/02-00:39:39.935 9ea8 Delete type=2 #124
+2026/05/02-00:39:39.935 9ea8 Delete type=2 #126
+2026/05/02-00:46:39.890 9ea8 Level-0 table #129: started
+2026/05/02-00:46:39.898 9ea8 Level-0 table #129: 36048 bytes OK
+2026/05/02-00:46:39.901 9ea8 Delete type=0 #125
+2026/05/02-00:54:39.887 4354 Level-0 table #131: started
+2026/05/02-00:54:39.903 4354 Level-0 table #131: 39627 bytes OK
+2026/05/02-00:54:39.905 4354 Delete type=0 #128
+2026/05/02-01:48:39.901 9ea8 Level-0 table #133: started
+2026/05/02-01:48:39.910 9ea8 Level-0 table #133: 11640 bytes OK
+2026/05/02-01:48:39.914 9ea8 Delete type=0 #130
+2026/05/02-02:05:39.901 4354 Level-0 table #135: started
+2026/05/02-02:05:39.909 4354 Level-0 table #135: 25375 bytes OK
+2026/05/02-02:05:39.913 4354 Delete type=0 #132
+2026/05/02-02:05:39.918 9ea8 Compacting 4@0 + 1@1 files
+2026/05/02-02:05:39.937 9ea8 Generated table #136@0: 40 keys, 20856 bytes
+2026/05/02-02:05:39.937 9ea8 Compacted 4@0 + 1@1 files => 20856 bytes
+2026/05/02-02:05:39.938 9ea8 compacted to: files[ 0 1 0 0 0 0 0 ]
+2026/05/02-02:05:39.940 9ea8 Delete type=2 #127
+2026/05/02-02:05:39.940 9ea8 Delete type=2 #129
+2026/05/02-02:05:39.941 9ea8 Delete type=2 #131
+2026/05/02-02:05:39.941 9ea8 Delete type=2 #133
+2026/05/02-02:05:39.941 9ea8 Delete type=2 #135
+2026/05/02-02:13:39.909 4354 Level-0 table #138: started
+2026/05/02-02:13:39.920 4354 Level-0 table #138: 15105 bytes OK
+2026/05/02-02:13:39.924 4354 Delete type=0 #134
+2026/05/02-03:29:39.904 9ea8 Level-0 table #140: started
+2026/05/02-03:29:39.912 9ea8 Level-0 table #140: 9115 bytes OK
+2026/05/02-03:29:39.914 9ea8 Delete type=0 #137
+2026/05/02-06:53:02.578 4354 Level-0 table #142: started
+2026/05/02-06:53:02.583 4354 Level-0 table #142: 8831 bytes OK
+2026/05/02-06:53:02.585 4354 Delete type=0 #139

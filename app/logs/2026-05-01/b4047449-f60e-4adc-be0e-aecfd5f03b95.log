@@ -1,0 +1,4 @@
+{"ts": "2026-05-01T15:40:56.066018+00:00", "level": "INFO", "jobId": "b4047449-f60e-4adc-be0e-aecfd5f03b95", "keyword": "khai trương hồng phát", "step": "created", "message": "Job created", "data": {"maxPosts": "unlimited"}, "seq": 24482}
+{"ts": "2026-05-01T15:41:59.406746+00:00", "level": "INFO", "jobId": "b4047449-f60e-4adc-be0e-aecfd5f03b95", "keyword": "khai trương hồng phát", "step": "start", "message": "Job started (attempt 1/1)", "data": {"w": 2}, "seq": 24575}
+{"ts": "2026-05-01T15:42:03.760430+00:00", "level": "INFO", "jobId": "b4047449-f60e-4adc-be0e-aecfd5f03b95", "keyword": "khai trương hồng phát", "step": "login", "message": "Already logged in (home).", "data": {"w": 2}, "seq": 24584}
+{"ts": "2026-05-01T15:42:03.772298+00:00", "level": "INFO", "jobId": "b4047449-f60e-4adc-be0e-aecfd5f03b95", "keyword": "khai trương hồng phát", "step": "search", "message": "Searching keyword: \"khai trương hồng phát\"", "data": {"w": 2}, "seq": 24585}

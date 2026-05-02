@@ -232,6 +232,7 @@ async function loadKeywordFiles(selectFirst = true) {
       sel.appendChild(opt);
       sel.disabled = true;
       loadedKeywords = [];
+      updateKeywordCountHint();
       return;
     }
 
@@ -244,6 +245,7 @@ async function loadKeywordFiles(selectFirst = true) {
     sel.disabled = false;
     if (selectFirst) sel.value = files[0];
     await loadKeywordsFromSelectedFile();
+    updateKeywordCountHint();
   } catch (e) {
     sel.innerHTML = "";
     const opt = document.createElement("option");
@@ -252,6 +254,7 @@ async function loadKeywordFiles(selectFirst = true) {
     sel.appendChild(opt);
     sel.disabled = true;
     loadedKeywords = [];
+    updateKeywordCountHint();
   }
 }
 
@@ -261,6 +264,7 @@ async function loadKeywordsFromSelectedFile() {
   const name = (sel.value || "").trim();
   if (!name) {
     loadedKeywords = [];
+    updateKeywordCountHint();
     return;
   }
   try {
@@ -269,6 +273,14 @@ async function loadKeywordsFromSelectedFile() {
   } catch (e) {
     loadedKeywords = [];
   }
+  updateKeywordCountHint();
+}
+
+function updateKeywordCountHint() {
+  const el = qs("keywordCountHint");
+  if (!el) return;
+  const n = Array.isArray(loadedKeywords) ? loadedKeywords.length : 0;
+  el.textContent = `Tổng keyword trong file: ${n}`;
 }
 
 function showError(msg) {
@@ -369,6 +381,7 @@ function ensureWorkerPanel(workerId) {
     startedAtIso: null,
     finishedAtIso: null,
     status: null,
+    summarizedJobIds: new Set(),
   };
   workerPanels.set(key, panel);
   return panel;
@@ -416,6 +429,38 @@ function updatePanelRuntimeNow(panel) {
 
 function tickAllPanelRuntimes() {
   for (const p of workerPanels.values()) updatePanelRuntimeNow(p);
+}
+
+function isFinishedJobStatus(st) {
+  return st === "done" || st === "error" || st === "cancelled";
+}
+
+function maybeAppendJobSummary(panel, job) {
+  if (!panel || !job || !job.id) return;
+  const jobId = String(job.id);
+  if (panel.summarizedJobIds && panel.summarizedJobIds.has(jobId)) return;
+
+  const startedMs = _parseIsoMs(job.started_at);
+  const finishedMs = _parseIsoMs(job.finished_at);
+  if (!startedMs || !finishedMs) return;
+
+  const kw = String(job.keyword || "").trim() || "—";
+  const st = String(job.status || "").trim();
+  const dur = _formatElapsed(finishedMs - startedMs);
+  const label =
+    st === "done"
+      ? "Hoàn tất"
+      : st === "error"
+        ? "Lỗi"
+        : st === "cancelled"
+          ? "Hủy"
+          : "Kết thúc";
+  panelAppend(panel, `(UI) ${label}: "${kw}" • Thời lượng: ${dur}`);
+  try {
+    panel.summarizedJobIds.add(jobId);
+  } catch {
+    // ignore
+  }
 }
 
 function syncWorkerPanels(workerCount) {
@@ -524,6 +569,21 @@ async function refreshJobs() {
   const sessionJobs = filterToCurrentSession(lastJobsSnapshot);
   renderJobs(sessionJobs);
   updateStatsUI(sessionJobs);
+
+  // Update panel runtime/status for the currently-followed job on each panel,
+  // and append a one-line duration summary when a keyword finishes.
+  for (const p of workerPanels.values()) {
+    if (!p || !p.jobId) continue;
+    const job = sessionJobs.find((j) => String(j.id) === String(p.jobId)) || null;
+    if (!job) continue;
+    p.startedAtIso = job.started_at || null;
+    p.finishedAtIso = job.finished_at || null;
+    p.status = job.status || null;
+    updatePanelRuntimeNow(p);
+    if (isFinishedJobStatus(String(job.status || ""))) {
+      maybeAppendJobSummary(p, job);
+    }
+  }
 
   // If any job is waiting for checkpoint decision, prompt the user.
   // Do not auto-reload; user must decide.
@@ -702,6 +762,9 @@ async function followJobOnPanel(job) {
   panel.finishedAtIso = job.finished_at || null;
   panel.status = job.status || null;
   updatePanelRuntimeNow(panel);
+  if (isFinishedJobStatus(String(job.status || ""))) {
+    maybeAppendJobSummary(panel, job);
+  }
   panelSetProgress(panel, job.progress_current ?? 0, job.progress_total ?? 0);
 
   const changed = String(panel.jobId || "") !== String(jobId);

@@ -1,6 +1,39 @@
-2026/05/01-21:52:32.301 1064 Reusing MANIFEST C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w2\Default\Local Storage\leveldb/MANIFEST-000001
-2026/05/01-21:52:32.331 1064 Recovering log #3
-2026/05/01-21:52:32.340 1064 Reusing old log C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w2\Default\Local Storage\leveldb/000003.log 
-2026/05/01-21:59:34.209 1064 Level-0 table #5: started
-2026/05/01-21:59:34.222 1064 Level-0 table #5: 21774 bytes OK
-2026/05/01-21:59:34.224 1064 Delete type=0 #3
+2026/05/01-22:51:32.690 9d6c Reusing MANIFEST C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w2\Default\Local Storage\leveldb/MANIFEST-000001
+2026/05/01-22:51:32.698 9d6c Recovering log #13
+2026/05/01-22:51:32.706 9d6c Reusing old log C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w2\Default\Local Storage\leveldb/000013.log 
+2026/05/01-22:53:34.675 9d6c Level-0 table #16: started
+2026/05/01-22:53:34.685 9d6c Level-0 table #16: 26236 bytes OK
+2026/05/01-22:53:34.692 9d6c Delete type=0 #13
+2026/05/01-23:53:39.225 8968 Level-0 table #18: started
+2026/05/01-23:53:39.232 8968 Level-0 table #18: 24027 bytes OK
+2026/05/01-23:53:39.237 8968 Delete type=0 #15
+2026/05/01-23:53:39.240 8968 Compacting 4@0 + 1@1 files
+2026/05/01-23:53:39.254 8968 Generated table #19@0: 262 keys, 27489 bytes
+2026/05/01-23:53:39.255 8968 Compacted 4@0 + 1@1 files => 27489 bytes
+2026/05/01-23:53:39.256 8968 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/05/01-23:53:39.257 8968 Delete type=2 #8
+2026/05/01-23:53:39.258 8968 Delete type=2 #10
+2026/05/01-23:53:39.258 8968 Delete type=2 #12
+2026/05/01-23:53:39.258 8968 Delete type=2 #16
+2026/05/01-23:53:39.258 8968 Delete type=2 #18
+2026/05/02-00:01:39.226 8968 Level-0 table #21: started
+2026/05/02-00:01:39.241 8968 Level-0 table #21: 27780 bytes OK
+2026/05/02-00:01:39.244 8968 Delete type=0 #17
+2026/05/02-00:16:39.228 8968 Level-0 table #23: started
+2026/05/02-00:16:39.245 8968 Level-0 table #23: 18220 bytes OK
+2026/05/02-00:16:39.247 8968 Delete type=0 #20
+2026/05/02-01:14:39.229 9d6c Level-0 table #25: started
+2026/05/02-01:14:39.237 9d6c Level-0 table #25: 34225 bytes OK
+2026/05/02-01:14:39.240 9d6c Delete type=0 #22
+2026/05/02-02:05:39.241 8968 Level-0 table #27: started
+2026/05/02-02:05:39.256 8968 Level-0 table #27: 37593 bytes OK
+2026/05/02-02:05:39.261 8968 Delete type=0 #24
+2026/05/02-02:05:39.263 8968 Compacting 4@0 + 1@1 files
+2026/05/02-02:05:39.305 8968 Generated table #28@0: 404 keys, 49445 bytes
+2026/05/02-02:05:39.305 8968 Compacted 4@0 + 1@1 files => 49445 bytes
+2026/05/02-02:05:39.314 8968 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/05/02-02:05:39.322 8968 Delete type=2 #19
+2026/05/02-02:05:39.334 8968 Delete type=2 #21
+2026/05/02-02:05:39.335 8968 Delete type=2 #23
+2026/05/02-02:05:39.335 8968 Delete type=2 #25
+2026/05/02-02:05:39.336 8968 Delete type=2 #27

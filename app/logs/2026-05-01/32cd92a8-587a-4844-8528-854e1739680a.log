@@ -1,0 +1,2 @@
+{"ts": "2026-05-01T15:44:33.018986+00:00", "level": "INFO", "jobId": "32cd92a8-587a-4844-8528-854e1739680a", "keyword": "khai trương bùng nổ", "step": "created", "message": "Job created", "data": {"maxPosts": "unlimited"}, "seq": 24610}
+{"ts": "2026-05-01T15:50:18.139294+00:00", "level": "INFO", "jobId": "32cd92a8-587a-4844-8528-854e1739680a", "keyword": "khai trương bùng nổ", "step": "start", "message": "Job started (attempt 1/1)", "data": {"w": 0}, "seq": 25525}

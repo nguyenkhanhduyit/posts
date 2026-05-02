@@ -1,3 +1,6 @@
-2026/05/01-22:06:22.764 4ea4 Reusing MANIFEST C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w2\Default\IndexedDB\https_www.facebook.com_0.indexeddb.leveldb/MANIFEST-000001
-2026/05/01-22:06:22.766 4ea4 Recovering log #3
-2026/05/01-22:06:22.819 4ea4 Reusing old log C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w2\Default\IndexedDB\https_www.facebook.com_0.indexeddb.leveldb/000003.log 
+2026/05/02-02:13:44.345 7130 Reusing MANIFEST C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w2\Default\IndexedDB\https_www.facebook.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/05/02-02:13:44.346 7130 Recovering log #3
+2026/05/02-02:13:44.367 7130 Reusing old log C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w2\Default\IndexedDB\https_www.facebook.com_0.indexeddb.leveldb/000003.log 
+2026/05/02-03:21:26.636 9154 Level-0 table #5: started
+2026/05/02-03:21:26.683 9154 Level-0 table #5: 1377321 bytes OK
+2026/05/02-03:21:26.686 9154 Delete type=0 #3
