@@ -3,8 +3,11 @@ Multi-signal fusion for post screenshot keep/reject.
 
 Modes: image_only | text_only | both | weighted
 
-Optional: OpenAI text embeddings (POST_CAPTURE_TEXT_EMBED), DOM media requirement,
-VLM rescue after reject (POST_CAPTURE_VLM_RESCUE).
+Inference is LOCAL ONLY: DOM heuristics + optional ONNX classifier in `post_classifier`.
+No third-party inference APIs (embedding/VLM SaaS).
+
+Optional: POST_CAPTURE_REQUIRE_MEDIA DOM gate. POST_CAPTURE_VLM_RESCUE is ignored while
+REMOTE_CLOUD_AI_ENABLED is False in ``app.worker.ai_inference_policy``.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
 
+from app.worker.ai_inference_policy import REMOTE_CLOUD_AI_ENABLED
 from app.worker.post_capture_decision.media_gate import dom_media_hard_veto, public_media_config
 from app.worker.post_capture_decision.text_embed import blend_text_scores, semantic_keyword_body_similarity
 from app.worker.post_capture_decision.text_heuristics import TextGateResult, analyze_post_text_for_capture
@@ -213,6 +217,10 @@ def attempt_vlm_rescue_after_reject(
         trace["skipped"] = "disabled"
         return True, trace
 
+    if not REMOTE_CLOUD_AI_ENABLED:
+        trace["skipped"] = "local_only_policy_no_remote_vlm"
+        return True, trace
+
     pv = str(os.getenv("POST_VLM_PROVIDER") or "").strip().lower()
     try:
         from app.worker.post_classifier.vlm_judge import judge_facebook_post_screenshot, provider_config_ready
@@ -233,7 +241,16 @@ def attempt_vlm_rescue_after_reject(
         timeout_sec=tout,
     )
     trace.update(
-        {"ran": True, "vlmOk": vr.get("ok"), "accept": vr.get("accept"), "elapsedMs": vr.get("elapsed_ms")}
+        {
+            "ran": True,
+            "vlmOk": vr.get("ok"),
+            "accept": vr.get("accept"),
+            "elapsedMs": vr.get("elapsed_ms"),
+            "vlmCategory": vr.get("category"),
+            "vlmModel": vr.get("model"),
+            "vlmTier": vr.get("tier"),
+            "vlmCascadePasses": vr.get("cascadePasses"),
+        }
     )
     if vr.get("ok") and bool(vr.get("accept")):
         cf_min = float(os.getenv("POST_CAPTURE_VLM_RESCUE_MIN_CONF", "0.55") or "0.55")
@@ -252,7 +269,16 @@ def attempt_vlm_rescue_after_reject(
 
 
 def public_config_snapshot() -> dict[str, Any]:
+    vlm_snap: dict[str, Any]
+    try:
+        from app.worker.post_classifier.vlm_judge import vlm_capabilities_snapshot
+
+        vlm_snap = vlm_capabilities_snapshot()
+    except Exception:
+        vlm_snap = {}
     return {
+        "inferencePolicy": "local_only" if not REMOTE_CLOUD_AI_ENABLED else "remote_allowed",
+        "remoteCloudAiEnabled": bool(REMOTE_CLOUD_AI_ENABLED),
         "mode": _env_mode(),
         "textMinCoverage": _env_float("POST_CAPTURE_TEXT_MIN_COVERAGE", 0.34),
         "rejectSponsoredText": os.getenv("POST_CAPTURE_REJECT_SPONSORED_TEXT", "1"),
@@ -263,4 +289,5 @@ def public_config_snapshot() -> dict[str, Any]:
         "embedBlend": _env_float("POST_CAPTURE_EMBED_BLEND", 0.35),
         "vlmRescue": os.getenv("POST_CAPTURE_VLM_RESCUE", "0"),
         "media": public_media_config(),
+        "vlmFrontier": vlm_snap,
     }

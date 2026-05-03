@@ -253,6 +253,18 @@ def _get_worker_id() -> int:
     return max(0, wid)
 
 
+def _worker_state_bool(conn, key: str, default: bool) -> bool:
+    """Read boolean from SQLite worker_state (matches app/backend/app.py conventions)."""
+    try:
+        row = conn.execute("SELECT value FROM worker_state WHERE key=?;", (key,)).fetchone()
+        if not row:
+            return bool(default)
+        v = str(row["value"] or "").strip().lower()
+        return v in {"1", "true", "yes", "on"}
+    except Exception:
+        return bool(default)
+
+
 def _worker_profile_dir(base: Path, worker_id: int) -> Path:
     # Use per-worker userDataDir to allow multiple Playwright persistent contexts in parallel.
     # Keeping worker_id=0 on the base dir preserves backwards compatibility.
@@ -641,6 +653,7 @@ def main() -> None:
                     max_posts=int(job.max_posts),
                     delay_min_sec=float(job.delay_min_sec),
                     delay_max_sec=float(job.delay_max_sec),
+                    recognition_enabled=_worker_state_bool(conn, "post_capture_recognition_enabled", True),
                 )
 
                 # attempt counter for retryable timeouts

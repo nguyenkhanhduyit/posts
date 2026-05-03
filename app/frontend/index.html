@@ -2,9 +2,10 @@
 <html lang="vi">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FB Posts Screenshot Tool</title>
-    <link rel="stylesheet" href="/assets/styles.css?v=19" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Chụp bài viết Facebook</title>
+    <link rel="stylesheet" href="/assets/styles.css?v=32" />
+    <meta name="theme-color" content="#050507" />
   </head>
   <body>
     <div class="app">
@@ -12,16 +13,19 @@
         <div class="brand">
           <div class="logo" aria-hidden="true">FB</div>
           <div>
-            <div class="title">Posts Screenshot Tool</div>
-            <div class="subtitle">Chụp toàn bộ kết quả theo keyword • Nhiều worker song song • Logs realtime (theo job)</div>
+            <div class="title">Chụp bài viết Facebook</div>
+            <div class="subtitle">Theo từ khóa, nhiều luồng chạy song song, xem nhật ký theo phiên</div>
           </div>
         </div>
-        <div class="status-pill" id="healthPill">Checking…</div>
+        <div class="topbar-right">
+          <a href="/review/rejected" class="btn" id="gotoRejectedReview">Ảnh đã lọc ra</a>
+          <div class="status-pill" id="healthPill">Đang kiểm tra…</div>
+        </div>
       </header>
 
       <section class="stats">
         <div class="stat-tile">
-          <div class="stat-label">Tổng keywords</div>
+          <div class="stat-label">Tổng từ khóa</div>
           <div class="stat-value" id="statTotal">0</div>
         </div>
         <div class="stat-tile glow-blue">
@@ -30,7 +34,7 @@
           <div class="stat-sub" id="statRunningKw">—</div>
         </div>
         <div class="stat-tile glow-green">
-          <div class="stat-label">Hoàn tất</div>
+          <div class="stat-label">Hoàn thành</div>
           <div class="stat-value" id="statDone">0</div>
         </div>
         <div class="stat-tile glow-red">
@@ -38,186 +42,176 @@
           <div class="stat-value" id="statError">0</div>
         </div>
       </section>
-      <div class="session-notice" id="sessionNotice" style="display:none"></div>
+      <div class="session-notice" id="sessionNotice" style="display: none"></div>
 
-      <section class="train-status" id="trainStatusSection" aria-label="Trạng thái train post classifier">
+      <section class="train-status" id="trainStatusSection">
         <div class="train-status-head">
-          <div class="train-status-title">Post classifier (train model)</div>
+          <div class="train-status-title">Huấn luyện model (phân loại ảnh)</div>
           <div class="train-status-actions">
-            <button class="btn" id="trainNowBtn" type="button" title="Chạy train model ngay (không làm đơ UI)">Start train</button>
+            <button class="btn" id="trainNowBtn" type="button">Chạy train</button>
             <span class="train-status-pill" id="trainRuntimePill">—</span>
           </div>
         </div>
         <div class="train-status-grid" id="trainStatusBody">Đang tải…</div>
       </section>
 
-      <section class="train-status" id="uncertainSection" aria-label="Dán nhãn ảnh uncertain">
+      <section class="train-status" id="uncertainSection">
         <div class="train-status-head">
-          <div class="train-status-title">Active Learning (ảnh cần dán nhãn)</div>
+          <div class="train-status-title">Ảnh chưa chắc chắn — cần bạn gán nhãn</div>
           <div class="train-status-actions">
-            <button class="btn" id="refreshUncertainBtn" type="button">Tải lại</button>
+            <button class="btn" id="refreshUncertainBtn" type="button">Tải lại danh sách</button>
             <span class="train-status-pill off" id="uncertainPill">—</span>
           </div>
         </div>
-        <div class="hint">Bật <code>POST_CLASSIFIER_AUTO_COLLECT=1</code> để tự gom ảnh “khó”. Ở đây bạn bấm Move → <code>positive</code>/<code>negative</code>, rồi bấm <b>Start train</b>.</div>
+        <div class="hint" style="margin-bottom: 10px">
+          Bật biến môi trường <code>POST_CLASSIFIER_AUTO_COLLECT</code> để tự gom ảnh “lưng chừng”. Gán nhãn xong nhấn chạy train ở trên.
+        </div>
         <div class="uncertain-grid" id="uncertainGrid"></div>
       </section>
 
       <main class="grid">
         <section class="card">
-          <div class="card-title">Tạo jobs</div>
+          <div class="card-title">Thiết lập và chạy</div>
           <div class="form">
             <div class="row2">
               <div class="field">
-                <label>Email / SĐT</label>
-                <input id="email" placeholder="example@gmail.com" autocomplete="username" />
+                <label>Tài khoản (email hoặc số điện thoại)</label>
+                <input id="email" placeholder="email@example.com" autocomplete="username" />
               </div>
               <div class="field">
-                <label>Password</label>
+                <label>Mật khẩu</label>
                 <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" />
-                <div class="hint">Để trống để dùng <code>FB_EMAIL</code> + <code>FB_PASSWORD</code> trong <code>app/.env</code>.</div>
-                <label class="chk" title="CHỈ bật nếu bạn chấp nhận ghi plaintext password vào app/.env trên máy bạn">
+                <div class="hint">Để trống sẽ đọc <code>FB_EMAIL</code> / <code>FB_PASSWORD</code> trong <code>app/.env</code></div>
+                <label class="chk">
                   <input type="checkbox" id="saveSecretsToDotenv" />
-                  <span>Lưu <code>FB_EMAIL</code>/<code>FB_PASSWORD</code> vào <code>app/.env</code></span>
+                  <span>Ghi tài khoản vào file <code>app/.env</code> trên máy này</span>
                 </label>
               </div>
             </div>
 
             <div class="actions compact">
-              <label class="chk" title="Bật để chạy Chrome ẩn (headless). Tắt để hiện cửa sổ Chrome.">
+              <label class="chk">
                 <input type="checkbox" id="headless" />
-                <span>Ẩn Chrome (headless)</span>
+                <span>Chạy trình duyệt ở chế độ ẩn (không hiện cửa sổ)</span>
+              </label>
+              <label class="chk">
+                <input type="checkbox" id="postCaptureRecognition" checked />
+                <span>Tự lọc ảnh không đúng bài (model + quy tắc)</span>
               </label>
             </div>
+            <div class="hint">Khi tắt: mọi ảnh chụp được đều được lưu; không chuyển vào thư mục <code>_rejected</code></div>
 
             <div class="row2">
               <div class="field">
-                <label>Số luồng chạy (workers)</label>
-                <input id="workerCount" type="number" min="1" max="8" step="1" placeholder="VD: 3" />
-                <div class="hint">Tăng để chạy nhiều keyword song song. Khuyến nghị 2–3 (cao quá dễ checkpoint/captcha).</div>
+                <label>Số luồng chạy song song</label>
+                <input id="workerCount" type="number" min="1" max="8" step="1" placeholder="ví dụ 2" />
+                <div class="hint">Thường dùng 2–3 luồng — nhiều quá dễ bị Facebook bắt xác minh</div>
               </div>
               <div class="field">
-                <label>Giới hạn tối đa số từ khoá</label>
-                <input id="maxKeywords" type="number" min="1" max="5000" step="1" placeholder="VD: 200" />
-                <div class="hint">
-                  Giới hạn này áp vào số dòng keyword thực tế trong file .txt (bỏ dòng trống). Nếu file nhiều hơn, chương trình sẽ chỉ chạy phần đầu và báo cảnh báo.
-                </div>
+                <label>Giới hạn số từ khóa mỗi lần chạy</label>
+                <input id="maxKeywords" type="number" min="1" max="5000" step="1" placeholder="ví dụ 200" />
+                <div class="hint">Áp cho file <code>.txt</code>, chỉ lấy đủ số dòng từ đầu file</div>
               </div>
             </div>
 
             <div class="actions compact">
-              <button class="btn" id="applySettingsBtn" type="button" title="Lưu settings và áp dụng ngay (không cần bấm Start)">
-                Áp dụng settings
-              </button>
-              <div class="hint" style="margin:0">
-                Nút này chỉ lưu cấu hình. Để tăng/giảm luồng ngay, cần đang chạy <code>run.bat</code> (supervisor).
+              <button class="btn primary" id="applySettingsBtn" type="button">Lưu cấu hình</button>
+              <span class="hint" style="margin: 0">Đổi số luồng khi đang mở <code>run.bat</code> · chương trình nền sẽ chỉnh trong vài giây</span>
+            </div>
+
+            <div class="row2">
+              <div class="field">
+                <label>Số ảnh tối đa cho mỗi từ khóa</label>
+                <label class="chk" style="margin-bottom: 0">
+                  <input type="checkbox" id="limitEnabled" />
+                  <span>Giới hạn số ảnh (bật ô này)</span>
+                </label>
+                <div class="hint">Tắt: chụp đến khi hết danh sách kết quả tìm kiếm</div>
+              </div>
+              <div class="field">
+                <label>Số ảnh tối đa (khi đã bật giới hạn)</label>
+                <input id="maxPosts" type="number" min="1" max="20000" step="1" placeholder="ví dụ 30" />
               </div>
             </div>
 
             <div class="row2">
               <div class="field">
-                <label>Giới hạn số bài chụp</label>
-                <div class="actions compact" style="margin:0">
-                  <label class="chk" title="Bật để chỉ chụp đúng số lượng bài đã nhập. Tắt để chụp tới khi hết bài trong kết quả.">
-                    <input type="checkbox" id="limitEnabled" />
-                    <span>Dùng giới hạn</span>
-                  </label>
-                </div>
-                <div class="hint">Tắt = chụp tới khi hết bài trong kết quả keyword.</div>
-              </div>
-              <div class="field">
-                <label>Số bài tối đa</label>
-                <input id="maxPosts" type="number" min="1" max="20000" step="1" placeholder="VD: 30" />
-                <div class="hint">Chỉ có hiệu lực khi bật “Dùng giới hạn”.</div>
-              </div>
-            </div>
-
-            <div class="row2">
-              <div class="field">
-                <label>Cooldown sau mỗi ảnh (giây)</label>
+                <label>Thời gian nghỉ giữa các ảnh (giây)</label>
                 <div class="inline2">
-                  <input id="delayMinSec" type="number" min="0" max="20" step="0.1" placeholder="min" />
-                  <input id="delayMaxSec" type="number" min="0" max="20" step="0.1" placeholder="max" />
+                  <input id="delayMinSec" type="number" min="0" max="20" step="0.1" placeholder="tối thiểu" />
+                  <input id="delayMaxSec" type="number" min="0" max="20" step="0.1" placeholder="tối đa" />
                 </div>
-                <div class="hint">Đặt 0/0 để chụp nhanh nhất (rủi ro checkpoint/captcha cao hơn).</div>
+                <div class="hint">Chúng tôi chọn ngẫu nhiên trong khoảng min–max</div>
               </div>
               <div class="field">
-                <label>Cooldown giữa keywords (giây)</label>
+                <label>Thời gian nghỉ khi chuyển từ khóa (giây)</label>
                 <div class="inline2">
-                  <input id="betweenKwDelayMinSec" type="number" min="0" max="60" step="0.5" placeholder="min" />
-                  <input id="betweenKwDelayMaxSec" type="number" min="0" max="60" step="0.5" placeholder="max" />
+                  <input id="betweenKwDelayMinSec" type="number" min="0" max="60" step="0.5" placeholder="tối thiểu" />
+                  <input id="betweenKwDelayMaxSec" type="number" min="0" max="60" step="0.5" placeholder="tối đa" />
                 </div>
-                <div class="hint">Giảm để chuyển keyword nhanh hơn.</div>
               </div>
             </div>
 
             <div class="field">
-              <label>File keywords (.txt trong folder <code>keyword/</code>)</label>
+              <label>File danh sách từ khóa (thư mục <code>keyword/</code>)</label>
               <div class="inline2">
                 <select id="keywordFile"></select>
-                <button class="btn" id="reloadKeywordFilesBtn" type="button">Tải lại</button>
+                <button class="btn" id="reloadKeywordFilesBtn" type="button">Tải lại file</button>
               </div>
-              <div class="hint" id="keywordCountHint" style="margin-top:6px">Tổng keyword trong file: —</div>
-              <div class="hint">
-                Mỗi dòng 1 keyword. Chương trình sẽ tự chụp tới khi hết bài trong kết quả của keyword đó rồi mới chuyển keyword tiếp theo.
-              </div>
+              <div class="hint" id="keywordCountHint">Số từ khóa: —</div>
             </div>
 
-            <div class="actions">
-              <button class="btn primary btn-xl" id="startBtn" type="button">Start</button>
+            <div class="actions" style="margin-top: 8px">
+              <button class="btn primary btn-xl" id="startBtn" type="button">Bắt đầu chụp</button>
             </div>
-            <div class="error" id="formError" style="display:none"></div>
+            <div class="form-alert" id="formError" role="alert" aria-live="assertive" style="display: none"></div>
           </div>
         </section>
 
         <section class="card">
           <div class="card-title row-between">
-            <span>Jobs</span>
+            <span>Danh sách tác vụ</span>
             <span class="job-controls">
               <label class="chk">
                 <input type="checkbox" id="hideFinished" checked />
-                <span>Hide finished</span>
+                <span>Ẩn tác vụ đã xong</span>
               </label>
-              <button class="btn" id="toggleShowAllBtn">Show all</button>
-              <button class="btn danger" id="cleanAllBtn" title="Xoá toàn bộ jobs + logs khỏi database">Clean all</button>
+              <button class="btn" id="toggleShowAllBtn">Xem tất cả</button>
+              <button class="btn danger" id="cleanAllBtn" type="button">Xóa lịch sử trong CSDL</button>
             </span>
           </div>
-          <div class="hint" id="jobsHint">Showing last 30 jobs</div>
+          <div class="hint" id="jobsHint">Đang tải…</div>
           <textarea class="jobs-text" id="jobsText" readonly spellcheck="false"></textarea>
         </section>
 
         <section class="card card-wide">
-          <div class="card-title">Logs realtime (theo worker)</div>
-          <div class="hint">
-            Mỗi worker có 1 khung log riêng. Khi keyword đổi trong cùng 1 phiên, log sẽ được giữ lại và nối tiếp (không xoá log cũ).
-          </div>
+          <div class="card-title">Nhật ký theo luồng</div>
+          <div class="hint">Mỗi cột tương ứng một luồng; đổi từ khóa trong phiên vẫn giữ log cũ</div>
           <div id="logsContainer"></div>
         </section>
       </main>
 
-      <div class="modal-backdrop" id="checkpointModal" style="display:none">
-        <div class="modal">
-          <div class="modal-title">Phát hiện Checkpoint/Captcha</div>
+      <div class="modal-backdrop" id="checkpointModal" style="display: none" aria-modal="true" role="dialog">
+        <div class="neo-modal modal">
+          <div class="modal-title">Facebook yêu cầu xác minh (captcha hoặc xác nhận tài khoản)</div>
           <div class="modal-body">
-            <div class="modal-line"><b>Worker</b>: <span id="cpWorker">—</span></div>
-            <div class="modal-line"><b>Keyword</b>: <span id="cpKeyword">—</span></div>
-            <div class="modal-line"><b>Chi tiết</b>:</div>
+            <div class="modal-line">Luồng số <strong id="cpWorker">—</strong></div>
+            <div class="modal-line">Từ khóa: <strong id="cpKeyword">—</strong></div>
+            <div class="modal-line muted" style="margin-top: 8px">Nội dung thông báo</div>
             <pre class="modal-pre" id="cpMessage"></pre>
-            <div class="hint">Chương trình sẽ <b>không tự reload</b>. Bạn chọn hành động bên dưới.</div>
           </div>
           <div class="modal-actions">
-            <button class="btn" id="cpContinueBtn" type="button">Tiếp tục (không reload)</button>
-            <button class="btn danger" id="cpReloadBtn" type="button">Reload worker &amp; thử lại</button>
+            <button class="btn" id="cpContinueBtn" type="button">Tiếp tục trên trình duyệt hiện tại</button>
+            <button class="btn danger" id="cpReloadBtn" type="button">Tải lại luồng và thử lại</button>
           </div>
+          <div class="neo-modal__footer-hint">Chương trình không tự tải lại trang. Bạn xử lý trên Facebook rồi chọn thao tác bên trên.</div>
         </div>
       </div>
 
-      <footer class="footer">
-        <span>Copyright Nguyễn Khánh Duy IT Nasani 2026</span>
-      </footer>
+      <footer class="footer">Nguyễn Khánh Duy · 2026</footer>
     </div>
 
-    <script src="/assets/app.js?v=19"></script>
+    <div class="toast-host" id="toastHost" aria-live="polite" aria-label="Thông báo"></div>
+    <script src="/assets/app.js?v=32"></script>
   </body>
 </html>
-

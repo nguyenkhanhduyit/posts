@@ -6,8 +6,9 @@ import os
 import subprocess
 import sys
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import AsyncGenerator, Optional
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
@@ -37,6 +38,38 @@ def _safe_uncertain_rel(rel: str) -> Path:
     if _PC_UNCERTAIN_DIR not in p.parents:
         raise HTTPException(status_code=400, detail="Invalid path")
     if p.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+    return p
+
+
+_POSTS_REJECTED_ALLOWED_EXT = frozenset({".png", ".jpg", ".jpeg", ".webp", ".json"})
+_POSTS_REJECTED_IMG_EXT = frozenset({".png", ".jpg", ".jpeg", ".webp"})
+
+
+def _posts_root() -> Path:
+    return (repo_root() / "posts").resolve()
+
+
+def _safe_rejected_posts_rel(rel: str) -> Path:
+    """Only files directly under .../_rejected/<name>; rel is posix relative to posts/."""
+    s = (rel or "").strip().replace("\\", "/")
+    if not s or s.startswith("/") or ".." in s or "\x00" in s:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    parts = PurePosixPath(s).parts
+    if "_rejected" not in parts:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    if len(parts) < 2 or parts[-2] != "_rejected":
+        raise HTTPException(status_code=400, detail="Invalid path")
+    p = (_posts_root() / s).resolve()
+    root = _posts_root()
+    try:
+        p.relative_to(root)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    ext = p.suffix.lower()
+    if ext not in _POSTS_REJECTED_ALLOWED_EXT:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+    if ext == ".json" and not p.name.endswith(".reject.json"):
         raise HTTPException(status_code=400, detail="Unsupported file type")
     return p
 
@@ -78,6 +111,7 @@ _STATE_KEY_DELAY_MIN_SEC = "delay_min_sec"
 _STATE_KEY_DELAY_MAX_SEC = "delay_max_sec"
 _STATE_KEY_BETWEEN_KW_DELAY_MIN_SEC = "between_kw_delay_min_sec"
 _STATE_KEY_BETWEEN_KW_DELAY_MAX_SEC = "between_kw_delay_max_sec"
+_STATE_KEY_POST_CAPTURE_RECOGNITION_ENABLED = "post_capture_recognition_enabled"
 
 
 def _get_state_int(key: str, default: int) -> int:
@@ -215,6 +249,7 @@ def get_settings() -> JSONResponse:
         )
         or "2"
     )
+    post_capture_recognition_enabled = _get_state_bool(_STATE_KEY_POST_CAPTURE_RECOGNITION_ENABLED, True)
     return JSONResponse(
         {
             "workerCount": worker_count,
@@ -229,6 +264,7 @@ def get_settings() -> JSONResponse:
             "delayMaxSec": delay_max_sec,
             "betweenKwDelayMinSec": bkw_min_sec,
             "betweenKwDelayMaxSec": bkw_max_sec,
+            "postCaptureRecognitionEnabled": post_capture_recognition_enabled,
         }
     )
 
@@ -279,6 +315,11 @@ def set_settings(payload: dict) -> JSONResponse:
         password = str(payload.get("password", ""))
         save_secrets_to_dotenv = bool(
             payload.get("saveSecretsToDotenv", _get_state_bool(_STATE_KEY_SAVE_SECRETS_TO_DOTENV, False))
+        )
+
+        reco_raw = payload.get("postCaptureRecognitionEnabled", None)
+        post_capture_recognition_enabled = (
+            bool(reco_raw) if reco_raw is not None else _get_state_bool(_STATE_KEY_POST_CAPTURE_RECOGNITION_ENABLED, True)
         )
         if save_secrets_to_dotenv and password.strip() == "":
             raise ValueError("Bật “Lưu FB_EMAIL/FB_PASSWORD vào app/.env” nhưng đang để trống password.")
@@ -345,6 +386,7 @@ def set_settings(payload: dict) -> JSONResponse:
     _set_state_str(_STATE_KEY_KEYWORD_FILE, keyword_file)
     _set_state_str(_STATE_KEY_EMAIL, email)
     _set_state_bool(_STATE_KEY_SAVE_SECRETS_TO_DOTENV, save_secrets_to_dotenv)
+    _set_state_bool(_STATE_KEY_POST_CAPTURE_RECOGNITION_ENABLED, post_capture_recognition_enabled)
     _set_state_str(_STATE_KEY_DELAY_MIN_SEC, str(dmin))
     _set_state_str(_STATE_KEY_DELAY_MAX_SEC, str(dmax))
     _set_state_str(_STATE_KEY_BETWEEN_KW_DELAY_MIN_SEC, str(bmin))
@@ -374,6 +416,7 @@ def set_settings(payload: dict) -> JSONResponse:
             "delayMaxSec": dmax,
             "betweenKwDelayMinSec": bmin,
             "betweenKwDelayMaxSec": bmax,
+            "postCaptureRecognitionEnabled": post_capture_recognition_enabled,
         }
     )
 
@@ -386,6 +429,227 @@ app.mount("/assets", StaticFiles(directory=str(frontend_dir / "assets")), name="
 def index() -> FileResponse:
     p = frontend_dir / "index.html"
     return FileResponse(str(p))
+
+
+@app.get("/review/rejected", response_class=HTMLResponse)
+def rejected_review_page() -> FileResponse:
+    p = frontend_dir / "rejected_review.html"
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail="Missing rejected_review.html")
+    return FileResponse(str(p))
+
+
+@app.get("/posts/rejected/tree")
+def posts_rejected_tree(limit_files: int = Query(600, ge=1, le=5000)) -> JSONResponse:
+    """
+    Scan posts/**/_rejected/ and return buckets (date / keyword-folder / run) with files.
+    """
+    root = _posts_root()
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    buckets_raw: list[dict] = []
+    seen_dirs: set[str] = set()
+    try:
+        for rej_dir in root.rglob("_rejected"):
+            if not rej_dir.is_dir():
+                continue
+            try:
+                rel_dir = rej_dir.relative_to(root).as_posix()
+            except ValueError:
+                continue
+            if rel_dir in seen_dirs:
+                continue
+            seen_dirs.add(rel_dir)
+            parts = rel_dir.split("/")
+            day = parts[0] if parts else ""
+            kw_folder = parts[1] if len(parts) > 1 else ""
+            run_folder = parts[2] if len(parts) > 2 else ""
+            rows: list[dict] = []
+            bucket_mtime = 0.0
+            for fp in rej_dir.iterdir():
+                if not fp.is_file():
+                    continue
+                ext = fp.suffix.lower()
+                if ext not in _POSTS_REJECTED_IMG_EXT:
+                    continue
+                st = fp.stat()
+                bucket_mtime = max(bucket_mtime, st.st_mtime)
+                stem = fp.stem
+                meta_nm = f"{stem}.reject.json"
+                meta_p = rej_dir / meta_nm
+                has_meta = meta_p.is_file()
+                rel_file = "/".join((rel_dir, fp.name))
+                rows.append(
+                    {
+                        "name": fp.name,
+                        "rel": rel_file,
+                        "size": st.st_size,
+                        "modifiedAt": st.st_mtime,
+                        "hasMeta": bool(has_meta),
+                        "metaRel": "/".join((rel_dir, meta_nm)) if has_meta else None,
+                        "thumbUrl": f"/posts/rejected/file?rel={quote(rel_file, safe='')}",
+                    }
+                )
+            if not rows:
+                continue
+            rows.sort(key=lambda r: float(r["modifiedAt"]), reverse=True)
+            buckets_raw.append(
+                {
+                    "relDir": rel_dir,
+                    "day": day,
+                    "keywordFolder": kw_folder,
+                    "runFolder": run_folder,
+                    "modifiedAt": bucket_mtime,
+                    "files": rows,
+                    "pathLabel": " / ".join(p for p in [day, kw_folder, run_folder] if p),
+                }
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cannot scan rejected: {e}")
+    buckets_raw.sort(key=lambda b: float(b["modifiedAt"]), reverse=True)
+    overall_rejected_images = sum(len(b["files"]) for b in buckets_raw)
+
+    truncated = False
+    if overall_rejected_images > limit_files:
+        truncated = True
+        keep: list[dict] = []
+        left = limit_files
+        for b in buckets_raw:
+            if left <= 0:
+                break
+            files = b["files"]
+            if len(files) <= left:
+                nb = dict(b)
+                nb["files"] = files
+                keep.append(nb)
+                left -= len(files)
+            else:
+                nb = dict(b)
+                nb["files"] = files[:left]
+                keep.append(nb)
+                left = 0
+                break
+        buckets_raw = keep
+
+    listed_rejected_images = sum(len(b["files"]) for b in buckets_raw)
+
+    days_map: dict[str, list] = {}
+    for b in buckets_raw:
+        d = str(b["day"])
+        days_map.setdefault(d, []).append(b)
+
+    ordered_days = sorted(days_map.keys(), reverse=True)
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "postsRoot": str(root),
+            "totalRejectedImages": int(overall_rejected_images),
+            "listedRejectedImages": int(listed_rejected_images),
+            "truncated": bool(truncated),
+            "days": [{"day": d, "buckets": days_map[d]} for d in ordered_days],
+            "flatBuckets": buckets_raw,
+        }
+    )
+
+
+@app.get("/posts/rejected/file")
+def posts_rejected_file(rel: str = Query(...)) -> FileResponse:
+    p = _safe_rejected_posts_rel(rel)
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(str(p))
+
+
+@app.get("/posts/rejected/meta")
+def posts_rejected_meta(imageRel: str = Query(..., alias="imageRel")) -> JSONResponse:
+    """
+    Load sidecar *.reject.json for an image path under posts/**/_rejected/.
+    """
+    img = _safe_rejected_posts_rel(imageRel)
+    if img.suffix.lower() not in _POSTS_REJECTED_IMG_EXT:
+        raise HTTPException(status_code=400, detail="imageRel must be an image under _rejected")
+    meta_p = img.parent / f"{img.stem}.reject.json"
+    if not meta_p.is_file():
+        return JSONResponse({"ok": True, "hasMeta": False, "meta": None})
+    try:
+        raw = meta_p.read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Cannot read metadata")
+    return JSONResponse({"ok": True, "hasMeta": True, "meta": data})
+
+
+@app.post("/posts/rejected/restore")
+def posts_rejected_restore(payload: dict) -> JSONResponse:
+    rel = str(payload.get("rel", "")).strip()
+    img = _safe_rejected_posts_rel(rel)
+    if img.suffix.lower() not in _POSTS_REJECTED_IMG_EXT:
+        raise HTTPException(status_code=400, detail="Provide rel to an image file")
+    if not img.exists():
+        raise HTTPException(status_code=404, detail="Not found")
+    run_dir = img.parent.parent
+    if img.parent.name != "_rejected" or not run_dir.is_dir():
+        raise HTTPException(status_code=400, detail="Unexpected folder layout")
+
+    dst = (run_dir / img.name).resolve()
+    rd = _posts_root()
+    try:
+        dst.relative_to(rd)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid target")
+    if dst.exists():
+        stem, suf = dst.stem, dst.suffix
+        i = 2
+        while True:
+            cand = (run_dir / f"{stem}_restored_{i}{suf}").resolve()
+            if not cand.exists():
+                dst = cand
+                break
+            i += 1
+            if i > 999:
+                raise HTTPException(status_code=409, detail="Too many duplicates in run folder")
+
+    meta = img.parent / f"{img.stem}.reject.json"
+    try:
+        img.replace(dst)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cannot restore: {e}")
+    meta_ok = False
+    if meta.exists():
+        try:
+            meta.unlink()
+            meta_ok = True
+        except Exception:
+            pass
+    return JSONResponse({"ok": True, "restoredTo": dst.relative_to(rd).as_posix(), "removedMetaSidecar": meta_ok})
+
+
+@app.post("/posts/rejected/delete")
+def posts_rejected_delete(payload: dict) -> JSONResponse:
+    rel = str(payload.get("rel", "")).strip()
+    img = _safe_rejected_posts_rel(rel)
+    if img.suffix.lower() not in _POSTS_REJECTED_IMG_EXT:
+        raise HTTPException(status_code=400, detail="Provide rel to an image file")
+    meta = img.parent / f"{img.stem}.reject.json"
+    n = 0
+    try:
+        if img.exists():
+            img.unlink()
+            n += 1
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cannot delete image: {e}")
+    try:
+        if meta.exists():
+            meta.unlink()
+            n += 1
+    except Exception:
+        pass
+    return JSONResponse({"ok": True, "deletedParts": n})
 
 
 @app.get("/health")

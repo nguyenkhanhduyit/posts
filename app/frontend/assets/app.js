@@ -55,7 +55,7 @@ async function sendCheckpointDecision(decision) {
     await apiJson("/checkpoint/decision", "POST", { jobId: checkpointModalJobId, decision });
   } catch (e) {
     // show in form area
-    showFormMessage(`Không gửi được quyết định checkpoint: ${String(e.message || e)}`, "error");
+    showFormMessage(`Không gửi được quyết định điểm xác minh: ${String(e.message || e)}`, "error");
   } finally {
     hideCheckpointModal();
   }
@@ -127,6 +127,7 @@ function setSessionNotice(msg) {
 
 const LS = {
   headless: "fbshot.headless",
+  postCaptureRecognition: "fbshot.postCaptureRecognition",
   limitEnabled: "fbshot.limitEnabled",
   maxPosts: "fbshot.maxPosts",
   workerCount: "fbshot.workerCount",
@@ -280,20 +281,72 @@ function updateKeywordCountHint() {
   const el = qs("keywordCountHint");
   if (!el) return;
   const n = Array.isArray(loadedKeywords) ? loadedKeywords.length : 0;
-  el.textContent = `Tổng keyword trong file: ${n}`;
+  el.textContent = `${n} từ khóa trong file`;
 }
 
 function showError(msg) {
   showFormMessage(msg, "error");
 }
 
+const _toastTimers = new WeakMap();
+
+function pushToast(text, variant = "ok") {
+  const host = qs("toastHost");
+  const t = String(text || "").trim();
+  if (!host || !t) return;
+
+  const v = variant === "error" ? "error" : variant === "warn" ? "warn" : "ok";
+
+  const row = document.createElement("div");
+  row.className = "toast";
+  row.dataset.variant = v;
+  row.innerHTML =
+    `<span class="toast__dot" aria-hidden="true"></span>` +
+    `<span class="toast__msg">${escapeHtml(t)}</span>` +
+    `<button type="button" class="toast__x" aria-label="Đóng">×</button>`;
+
+  const closeBtn = row.querySelector(".toast__x");
+  const remove = () => {
+    row.style.opacity = "0";
+    row.style.transform = "translateY(8px)";
+    row.style.pointerEvents = "none";
+    setTimeout(() => row.remove(), 200);
+    const tid = _toastTimers.get(row);
+    if (tid) clearTimeout(tid);
+    _toastTimers.delete(row);
+  };
+
+  closeBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    remove();
+  });
+
+  host.appendChild(row);
+  while (host.children.length > 5) host.removeChild(host.firstChild);
+
+  const ttl = v === "error" ? 9000 : v === "warn" ? 7000 : 4200;
+  _toastTimers.set(row, setTimeout(remove, ttl));
+}
+
+/** ok | warn → toast only; error → toast + sticky alert strip */
 function showFormMessage(msg, kind = "error") {
   const el = qs("formError");
-  if (!el) return;
-  el.classList.remove("ok");
-  if (kind === "ok") el.classList.add("ok");
-  el.style.display = msg ? "block" : "none";
-  el.textContent = msg || "";
+  const raw = typeof msg === "string" ? msg : String(msg ?? "");
+  const trimmed = raw.trim();
+
+  if (kind === "error" && el) {
+    el.className = "form-alert form-alert--error";
+    el.style.display = trimmed ? "flex" : "none";
+    el.textContent = trimmed;
+  } else if (el) {
+    el.className = "form-alert";
+    el.style.display = "none";
+    el.textContent = "";
+  }
+
+  if (trimmed) {
+    pushToast(trimmed, kind === "warn" ? "warn" : kind === "error" ? "error" : "ok");
+  }
 }
 
 function _normWorkerKey(workerId) {
@@ -316,25 +369,26 @@ function ensureWorkerPanel(workerId) {
 
   const root = document.createElement("div");
   root.className = "log-panel";
-  root.style.cssText =
-    "border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:12px;margin:10px 0;background:rgba(255,255,255,.03)";
 
   const header = document.createElement("div");
-  header.style.cssText = "display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:8px";
+  header.className = "log-panel__head";
 
   const left = document.createElement("div");
-  left.style.cssText = "font-weight:700";
+  left.className = "log-panel__tag";
   left.textContent = key;
 
   const rightWrap = document.createElement("div");
-  rightWrap.style.cssText = "display:flex;flex-direction:column;align-items:flex-end;gap:2px";
+  rightWrap.style.display = "flex";
+  rightWrap.style.flexDirection = "column";
+  rightWrap.style.alignItems = "flex-end";
+  rightWrap.style.gap = "2px";
 
   const right = document.createElement("div");
-  right.style.cssText = "opacity:.92;font-size:12px";
+  right.className = "log-panel__status";
   right.textContent = "—";
 
   const runtime = document.createElement("div");
-  runtime.style.cssText = "opacity:.75;font-size:12px";
+  runtime.className = "log-panel__runtime";
   runtime.textContent = "";
 
   rightWrap.appendChild(right);
@@ -345,10 +399,10 @@ function ensureWorkerPanel(workerId) {
 
   const progress = document.createElement("div");
   progress.className = "progress";
-  progress.style.margin = "8px 0 10px";
+  progress.style.margin = "10px 0 12px";
   progress.innerHTML = `
     <div class="progress-label">
-      <span>Progress</span>
+      <span>Tiến độ</span>
       <span class="progressText">0/0</span>
     </div>
     <div class="progress-bar">
@@ -358,7 +412,6 @@ function ensureWorkerPanel(workerId) {
 
   const logEl = document.createElement("pre");
   logEl.className = "log";
-  logEl.style.margin = "0";
 
   root.appendChild(header);
   root.appendChild(progress);
@@ -544,54 +597,50 @@ function renderTrainStatus(data) {
   if (pill) {
     const mode = String(rt.postClassifierEnabledMode || "").toLowerCase();
     const auto = !!rt.postClassifierAutoEnabled;
-    const mtxt = mode === "forced" ? "ép" : "tự";
     pill.textContent = rt.postClassifierEnabled
-      ? `Lọc ảnh khi chụp: BẬT (${mtxt}${mode === "auto" ? (auto ? "" : " (model chưa hỗ trợ)") : ""})`
-      : `Lọc ảnh khi chụp: TẮT (${mtxt})`;
+      ? `Lọc ảnh khi chụp: bật (${mode === "forced" ? "ép trong môi trường" : auto ? "theo model" : "model chưa hỗ trợ tự bật"})`
+      : `Lọc ảnh khi chụp: tắt (${mode === "forced" ? "ép tắt" : "mặc định"})`;
     pill.className = "train-status-pill" + (rt.postClassifierEnabled ? " ok" : " off");
   }
 
   const rows = [];
-  rows.push(["Thư mục dataset", String(ds.root || "—")]);
+  rows.push(["Thư mục dữ liệu", String(ds.root || "—")]);
   rows.push([
-    "Số ảnh negative",
-    `${ds.negativeCount ?? "—"}${ds.countsTruncated ? " (≥, đếm tối đa 2500)" : ""}`,
+    "Số ảnh mẫu xấu",
+    `${ds.negativeCount ?? "—"}${ds.countsTruncated ? " (ước lượng)" : ""}`,
   ]);
-  rows.push(["Engine / ONNX", `${rt.engine ?? "—"} / ${rt.onnxVariant ?? "—"}`]);
+  rows.push(["Bộ nhận diện / ONNX", `${rt.engine ?? "—"} · ${rt.onnxVariant ?? "—"}`]);
   rows.push([
-    "Ngưỡng loại / nguồn / budget",
-    `${rt.threshold ?? "—"} (${rt.thresholdSource ?? "—"}) / ${rt.budgetSec ?? "—"}s`,
+    "Ngưỡng lọc · nguồn · thời gian cho phép",
+    `${rt.threshold ?? "—"} (${rt.thresholdSource ?? "—"}) · ${rt.budgetSec ?? "—"} giây`,
   ]);
-  rows.push([
-    "Deep recheck / cache emb",
-    `${rt.deepRecheckMargin ?? "—"} / ${rt.deepEmbCache ?? "—"}`,
-  ]);
-  rows.push(["Hash max dist", `${rt.hashMaxDist ?? "—"}`]);
-  rows.push(["ORT threads (intra/inter)", `${rt.ortThreads ?? "—"} / ${rt.ortInterThreads ?? "—"}`]);
-  rows.push(["File model", md.exists ? "Có trên disk" : "Chưa có"]);
-  rows.push(["Model kind", String(md.kind || "—")]);
-  if (md.suggestedRejectThreshold != null) rows.push(["Model suggested threshold", String(md.suggestedRejectThreshold)]);
-  if (md.deepK != null) rows.push(["Deep centroids (K)", String(md.deepK)]);
-  if (md.hashes != null) rows.push(["Deep hashes", String(md.hashes)]);
-  rows.push(["File model — cập nhật lần cuối", fmtIso(md.fileModifiedAt)]);
-  rows.push(["Train trong model (UTC)", fmtIso(md.trainedCreatedAtIso)]);
+  rows.push(["Kiểm tra lại / bộ nhớ embedding", `${rt.deepRecheckMargin ?? "—"} · ${rt.deepEmbCache ?? "—"}`]);
+  rows.push(["Khoảng cách hash tối đa", `${rt.hashMaxDist ?? "—"}`]);
+  rows.push(["Luồng xử lý ONNX", `${rt.ortThreads ?? "—"} / ${rt.ortInterThreads ?? "—"}`]);
+  rows.push(["File model trên máy", md.exists ? "Có" : "Chưa có"]);
+  rows.push(["Dạng model", String(md.kind || "—")]);
+  if (md.suggestedRejectThreshold != null) rows.push(["Ngưỡng gợi ý", String(md.suggestedRejectThreshold)]);
+  if (md.deepK != null) rows.push(["Số cụm (K)", String(md.deepK)]);
+  if (md.hashes != null) rows.push(["Số hash", String(md.hashes)]);
+  rows.push(["Sửa file model lần cuối", fmtIso(md.fileModifiedAt)]);
+  rows.push(["Thời gian train được ghi trong file model", fmtIso(md.trainedCreatedAtIso)]);
 
   if (lt && typeof lt === "object" && Object.keys(lt).length > 0 && lt.phase && lt.phase !== "running") {
-    rows.push(["Train gần nhất — phase", String(lt.phase)]);
+    rows.push(["Phiên train gần nhất · giai đoạn", String(lt.phase)]);
     rows.push([
-      "Train gần nhất — kết quả",
-      lt.ok === true ? "OK" : lt.exitCode === 2 ? "Bỏ qua (thiếu ảnh)" : "Lỗi / không OK",
+      "Phiên train gần nhất · kết quả",
+      lt.ok === true ? "Thành công" : lt.exitCode === 2 ? "Bỏ qua (thiếu ảnh)" : "Thất bại",
     ]);
-    rows.push(["Train gần nhất — chi tiết", String(lt.message || "—")]);
-    rows.push(["Train gần nhất — xong lúc", fmtIso(lt.finishedAt || lt.updatedAt)]);
-    rows.push(["Train gần nhất — mã thoát", lt.exitCode != null ? String(lt.exitCode) : "—"]);
-    if (lt.durationMs != null) rows.push(["Train gần nhất — thời gian", `${lt.durationMs} ms`]);
+    rows.push(["Phiên train gần nhất · chi tiết", String(lt.message || "—")]);
+    rows.push(["Phiên train gần nhất · kết thúc", fmtIso(lt.finishedAt || lt.updatedAt)]);
+    rows.push(["Phiên train gần nhất · mã thoát", lt.exitCode != null ? String(lt.exitCode) : "—"]);
+    if (lt.durationMs != null) rows.push(["Phiên train gần nhất · thời lượng (ms)", `${lt.durationMs}`]);
   } else if (lt && lt.phase === "running") {
-    rows.push(["Train hiện tại", "Đang chạy… (nếu bạn bấm Train từ CLI)"]);
+    rows.push(["Train", "Đang chạy…"]);
   } else {
     rows.push([
-      "Log train (UI)",
-      "Chưa có file log train. Chạy run.bat (train tự động) hoặc: python -m app.worker.post_classifier.train",
+      "Nhật ký train",
+      "Chưa có. Có thể chạy: python -m app.worker.post_classifier.train",
     ]);
   }
 
@@ -610,7 +659,7 @@ async function refreshTrainStatus() {
     renderTrainStatus(j);
   } catch (e) {
     if (body) {
-      body.textContent = `Không đọc được trạng thái train: ${String(e.message || e)}`;
+      body.textContent = `Không đọc được trạng thái train — ${String(e.message || e)}`;
     }
   }
 }
@@ -619,23 +668,23 @@ async function startTrainNow() {
   const btn = qs("trainNowBtn");
   if (btn) {
     btn.disabled = true;
-    btn.textContent = "Đang chạy…";
+    btn.textContent = "Đang gửi lệnh…";
   }
   try {
     const res = await apiJson("/post-classifier/train", "POST", {});
     if (res && res.ok) {
-      showFormMessage(`Đã start train (pid=${res.pid}).`, "ok");
+      showFormMessage(`Đã bắt đầu train (mã tiến trình ${res.pid}).`, "ok");
     } else if (res && res.running) {
-      showFormMessage(`Train đang chạy sẵn (pid=${res.pid || "?"}).`, "warn");
+      showFormMessage(`Train đang chạy sẵn (mã ${res.pid || "?"}).`, "warn");
     } else {
-      showFormMessage("Không start được train (không rõ lý do).", "error");
+      showFormMessage("Không gửi lệnh train được.", "error");
     }
   } catch (e) {
-    showFormMessage(`Không start được train: ${String(e.message || e)}`, "error");
+    showFormMessage(`Train thất bại — ${String(e.message || e)}`, "error");
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = "Start train";
+      btn.textContent = "Chạy train";
     }
     await refreshTrainStatus();
   }
@@ -649,12 +698,12 @@ async function renderUncertain() {
     const j = await apiJson("/post-classifier/uncertain/list", "GET");
     const items = Array.isArray(j?.items) ? j.items : [];
     if (pill) {
-      pill.textContent = items.length > 0 ? `Có ${items.length} ảnh cần dán nhãn` : "Không có ảnh uncertain";
+      pill.textContent = items.length > 0 ? `${items.length} ảnh chờ gán nhãn` : "Không có ảnh chờ";
       pill.className = "train-status-pill" + (items.length > 0 ? " ok" : " off");
     }
     if (items.length === 0) {
       grid.innerHTML =
-        `<div class="hint" style="padding:10px">Chưa có ảnh uncertain. Bật <code>POST_CLASSIFIER_AUTO_COLLECT=1</code> rồi chạy chụp, hoặc tăng <code>POST_CLASSIFIER_AUTO_COLLECT_MARGIN</code>.</div>`;
+        `<div class="hint" style="padding:10px">Chưa có ảnh. Bật <code>POST_CLASSIFIER_AUTO_COLLECT</code> rồi chạy chụp thử.</div>`;
       return;
     }
     const cardHtml = (it) => {
@@ -667,8 +716,8 @@ async function renderUncertain() {
           <img class="uncertain-img" src="${escapeHtml(url)}" alt="${escapeHtml(name)}" loading="lazy" />
           <div class="uncertain-meta"><b>${escapeHtml(bucket || "—")}</b><br/>${escapeHtml(name)}</div>
           <div class="uncertain-actions">
-            <button class="btn small" data-act="pos" data-rel="${escapeHtml(rel)}">→ positive</button>
-            <button class="btn small" data-act="neg" data-rel="${escapeHtml(rel)}">→ negative</button>
+            <button class="btn small" data-act="pos" data-rel="${escapeHtml(rel)}">→ mẫu tốt</button>
+            <button class="btn small" data-act="neg" data-rel="${escapeHtml(rel)}">→ mẫu xấu</button>
             <button class="btn small danger" data-act="del" data-rel="${escapeHtml(rel)}">Xoá</button>
           </div>
         </div>`;
@@ -690,7 +739,7 @@ async function renderUncertain() {
           await apiJson("/post-classifier/uncertain/delete", "POST", { rel });
         }
       } catch (e) {
-        showFormMessage(`Không thao tác được uncertain: ${String(e.message || e)}`, "error");
+        showFormMessage(`Không thao tác ảnh chờ nhãn: ${String(e.message || e)}`, "error");
       } finally {
         await renderUncertain();
         await refreshTrainStatus();
@@ -698,10 +747,10 @@ async function renderUncertain() {
     };
   } catch (e) {
     if (pill) {
-      pill.textContent = "Lỗi load uncertain";
+      pill.textContent = "Lỗi tải danh sách ảnh chờ nhãn";
       pill.className = "train-status-pill off";
     }
-    grid.innerHTML = `<div class="error" style="padding:10px">Không tải được uncertain: ${escapeHtml(String(e.message || e))}</div>`;
+    grid.innerHTML = `<div class="error" style="padding:10px">Không tải được danh sách ảnh chờ nhãn: ${escapeHtml(String(e.message || e))}</div>`;
   }
 }
 
@@ -709,6 +758,20 @@ function badgeClass(status) {
   return ["pending", "running", "done", "error", "cancelled"].includes(status)
     ? status
     : "pending";
+}
+
+/** Hiển thị trạng thái tác vụ bằng tiếng Việt trong bảng monospace (cố định 9 ký tự). */
+function fmtJobStatusVi(status) {
+  const key = String(status || "").trim().toLowerCase();
+  const map = {
+    pending: "chờ",
+    running: "đang chạy",
+    done: "xong",
+    error: "lỗi",
+    cancelled: "đã huỷ",
+  };
+  const base = map[key] != null ? map[key] : String(status || "—").slice(0, 9).trim();
+  return base.padEnd(9, " ").slice(0, 9);
 }
 
 function parseIsoMs(iso) {
@@ -734,7 +797,7 @@ function fmtDurationMs(ms) {
 }
 
 function jobLine(job) {
-  const st = (job.status || "").toString().padEnd(9, " ").slice(0, 9);
+  const st = fmtJobStatusVi(job.status);
   const prog = `${job.progress_current ?? 0}/${job.progress_total ?? 0}`.padEnd(9, " ").slice(0, 9);
   const created = (job.created_at || "").toString();
   const startedMs = parseIsoMs(job.started_at);
@@ -760,7 +823,7 @@ function jobLine(job) {
     job.last_worker_id != null && String(job.last_worker_id).trim() !== ""
       ? ` [w${String(job.last_worker_id).trim()}]`
       : "";
-  const err = job.last_error ? ` | error: ${String(job.last_error).replaceAll("\n", " ")}` : "";
+  const err = job.last_error ? ` | lỗi: ${String(job.last_error).replaceAll("\n", " ")}` : "";
   return `${st} | ${prog} | ${dur} | ${created} | ${kw}${wid}${err}`;
 }
 
@@ -780,19 +843,20 @@ function renderJobs(jobs) {
   if (!showAllJobs) list = list.slice(0, JOBS_PAGE_SIZE);
   lastRenderedJobs = [...list];
 
-  const header = "STATUS    | PROGRESS   | DUR     | CREATED                 | KEYWORD";
+  const header =
+    "Trạng thái | Số ảnh đã chụp | Thời gian | Được tạo lúc            | Từ khóa";
   const lines = [header, ...list.map(jobLine)];
   jobsText.value = lines.join("\n");
 
   const hint = qs("jobsHint");
   const toggleBtn = qs("toggleShowAllBtn");
   if (!showAllJobs) {
-    hint.textContent = `Showing last ${Math.min(JOBS_PAGE_SIZE, total)} of ${total} jobs`;
-    toggleBtn.textContent = total > JOBS_PAGE_SIZE ? "Show all" : "Show all";
+    hint.textContent = `Đang hiển thị ${Math.min(JOBS_PAGE_SIZE, total)} / ${total} tác vụ`;
+    toggleBtn.textContent = total > JOBS_PAGE_SIZE ? "Xem thêm" : "Đã hiển thị đủ";
     toggleBtn.disabled = total <= JOBS_PAGE_SIZE;
   } else {
-    hint.textContent = `Showing all ${total} jobs`;
-    toggleBtn.textContent = "Show less";
+    hint.textContent = `Tất cả ${total} tác vụ`;
+    toggleBtn.textContent = "Thu gọn danh sách";
     toggleBtn.disabled = false;
   }
 }
@@ -844,8 +908,8 @@ async function refreshJobs() {
   const sessionRunning = sessionJobs.find((j) => j.status === "running") || null;
   if (currentSessionJobIds && !sessionRunning && globalRunning && !currentSessionJobIds.has(String(globalRunning.id))) {
     setSessionNotice(
-      `Đang có job của phiên khác đang chạy: "${String(globalRunning.keyword || "").trim()}". ` +
-        `Phiên hiện tại sẽ chờ tới khi job đó hoàn tất. (Bạn có thể dùng “Clean all” nếu muốn chạy lại từ đầu.)`
+      `Đang có tác vụ (phiên khác) chạy từ khóa "${String(globalRunning.keyword || "").trim()}". ` +
+        `Phiên này sẽ đợi tác vụ đó xong trước. (Muốn chạy lại từ đầu có thể dùng “Xóa lịch sử trong CSDL”.)`
     );
   } else {
     setSessionNotice("");
@@ -1033,10 +1097,10 @@ async function checkHealth() {
   const pill = qs("healthPill");
   try {
     await apiJson("/health");
-    pill.textContent = "Backend OK";
+    pill.textContent = "Đã kết nối";
     pill.className = "status-pill ok";
   } catch {
-    pill.textContent = "Backend DOWN";
+    pill.textContent = "Không kết nối";
     pill.className = "status-pill bad";
   }
 }
@@ -1046,6 +1110,7 @@ async function loadRuntimeSettings() {
   const mkEl = qs("maxKeywords");
   const emailEl = qs("email");
   const headlessEl = qs("headless");
+  const postCaptureRecoEl = qs("postCaptureRecognition");
   const limitEnabledEl = qs("limitEnabled");
   const maxPostsEl = qs("maxPosts");
   const delayMinEl = qs("delayMinSec");
@@ -1069,6 +1134,12 @@ async function loadRuntimeSettings() {
     const headless = !!s.headless;
     if (headlessEl) headlessEl.checked = headless;
     lsSet(LS.headless, headless ? "1" : "0");
+
+    const recoRaw = s.postCaptureRecognitionEnabled;
+    const postCaptureRecognitionEnabled =
+      recoRaw === undefined || recoRaw === null ? true : !!recoRaw;
+    if (postCaptureRecoEl) postCaptureRecoEl.checked = postCaptureRecognitionEnabled;
+    lsSet(LS.postCaptureRecognition, postCaptureRecognitionEnabled ? "1" : "0");
 
     const limitEnabled = !!s.limitEnabled;
     if (limitEnabledEl) limitEnabledEl.checked = limitEnabled;
@@ -1118,6 +1189,7 @@ async function loadRuntimeSettings() {
 
     if (saveSecretsEl) saveSecretsEl.checked = lsGetBool(LS.saveSecretsToDotenv, false);
     if (headlessEl) headlessEl.checked = lsGetBool(LS.headless, false);
+    if (postCaptureRecoEl) postCaptureRecoEl.checked = lsGetBool(LS.postCaptureRecognition, true);
     if (limitEnabledEl) limitEnabledEl.checked = lsGetBool(LS.limitEnabled, false);
     if (maxPostsEl && !maxPostsEl.value) {
       const savedMp = lsGetInt(LS.maxPosts, 30);
@@ -1137,6 +1209,7 @@ async function saveRuntimeSettings() {
   const emailEl = qs("email");
   const passwordEl = qs("password");
   const headlessEl = qs("headless");
+  const postCaptureRecoEl = qs("postCaptureRecognition");
   const limitEnabledEl = qs("limitEnabled");
   const maxPostsEl = qs("maxPosts");
   const kwSel = qs("keywordFile");
@@ -1148,6 +1221,7 @@ async function saveRuntimeSettings() {
   const workerCount = Number.parseInt(String(wcEl?.value ?? "1"), 10);
   const maxKeywords = Number.parseInt(String(mkEl?.value ?? "500"), 10);
   const headless = !!headlessEl?.checked;
+  const postCaptureRecognitionEnabled = postCaptureRecoEl ? !!postCaptureRecoEl.checked : true;
   const limitEnabled = !!limitEnabledEl?.checked;
   const maxPosts = Number.parseInt(String(maxPostsEl?.value ?? "30"), 10);
   const email = String(emailEl?.value ?? "").trim();
@@ -1159,31 +1233,35 @@ async function saveRuntimeSettings() {
   const betweenKwDelayMinSec = Number.parseFloat(String(bkwMinEl?.value ?? "1"));
   const betweenKwDelayMaxSec = Number.parseFloat(String(bkwMaxEl?.value ?? "2"));
   if (!Number.isFinite(workerCount) || workerCount < 1 || workerCount > 8) {
-    throw new Error("Số luồng không hợp lệ (1..8)");
+    throw new Error("Số luồng chỉ được từ 1 đến 8.");
   }
   if (!Number.isFinite(maxKeywords) || maxKeywords < 1 || maxKeywords > 5000) {
-    throw new Error("Giới hạn từ khoá không hợp lệ (1..5000)");
+    throw new Error("Giới hạn từ khóa chỉ được từ 1 đến 5000.");
   }
   if (limitEnabled && (!Number.isFinite(maxPosts) || maxPosts <= 0)) {
-    throw new Error("Bạn đã bật “Dùng giới hạn” nhưng số bài tối đa không hợp lệ.");
+    throw new Error("Đã bật giới hạn ảnh — hãy nhập số ảnh tối đa.");
   }
   if (!keywordFile) {
-    throw new Error("Vui lòng chọn file keywords (.txt).");
+    throw new Error("Hãy chọn file danh sách từ khóa.");
   }
   if (saveSecretsToDotenv && (!email || !password)) {
-    throw new Error("Đang bật lưu vào app/.env nhưng Email/Password không đủ.");
+    throw new Error("Muốn ghi vào .env phải nhập đủ email và mật khẩu.");
   }
-  if (!Number.isFinite(delayMinSec) || delayMinSec < 0 || delayMinSec > 20) throw new Error("delayMinSec không hợp lệ (0..20)");
-  if (!Number.isFinite(delayMaxSec) || delayMaxSec < 0 || delayMaxSec > 20) throw new Error("delayMaxSec không hợp lệ (0..20)");
-  if (delayMaxSec < delayMinSec) throw new Error("delayMaxSec phải >= delayMinSec");
+  if (!Number.isFinite(delayMinSec) || delayMinSec < 0 || delayMinSec > 20)
+    throw new Error("Thời gian nghỉ tối thiểu giữa các ảnh: 0–20 giây.");
+  if (!Number.isFinite(delayMaxSec) || delayMaxSec < 0 || delayMaxSec > 20)
+    throw new Error("Thời gian nghỉ tối đa giữa các ảnh: 0–20 giây.");
+  if (delayMaxSec < delayMinSec) throw new Error("Nghỉ tối đa phải lớn hơn hoặc bằng nghỉ tối thiểu.");
   if (!Number.isFinite(betweenKwDelayMinSec) || betweenKwDelayMinSec < 0 || betweenKwDelayMinSec > 60)
-    throw new Error("betweenKwDelayMinSec không hợp lệ (0..60)");
+    throw new Error("Nghỉ tối thiểu giữa các từ khóa: 0–60 giây.");
   if (!Number.isFinite(betweenKwDelayMaxSec) || betweenKwDelayMaxSec < 0 || betweenKwDelayMaxSec > 60)
-    throw new Error("betweenKwDelayMaxSec không hợp lệ (0..60)");
-  if (betweenKwDelayMaxSec < betweenKwDelayMinSec) throw new Error("betweenKwDelayMaxSec phải >= betweenKwDelayMinSec");
+    throw new Error("Nghỉ tối đa giữa các từ khóa: 0–60 giây.");
+  if (betweenKwDelayMaxSec < betweenKwDelayMinSec)
+    throw new Error("Nghỉ tối đa giữa từ khóa phải ≥ nghỉ tối thiểu.");
   lsSet(LS.workerCount, String(workerCount));
   lsSet(LS.maxKeywords, String(maxKeywords));
   lsSet(LS.headless, headless ? "1" : "0");
+  lsSet(LS.postCaptureRecognition, postCaptureRecognitionEnabled ? "1" : "0");
   lsSet(LS.limitEnabled, limitEnabled ? "1" : "0");
   if (Number.isFinite(maxPosts) && maxPosts > 0) lsSet(LS.maxPosts, String(maxPosts));
   lsSet(LS.saveSecretsToDotenv, saveSecretsToDotenv ? "1" : "0");
@@ -1195,6 +1273,7 @@ async function saveRuntimeSettings() {
     workerCount,
     maxKeywords,
     headless,
+    postCaptureRecognitionEnabled,
     limitEnabled,
     maxPosts: limitEnabled ? maxPosts : null,
     keywordFile,
@@ -1210,6 +1289,7 @@ async function saveRuntimeSettings() {
     workerCount,
     maxKeywords,
     headless,
+    postCaptureRecognitionEnabled,
     limitEnabled,
     maxPosts: limitEnabled ? maxPosts : null,
     keywordFile,
@@ -1228,14 +1308,13 @@ async function applyRuntimeSettingsNow() {
   try {
     if (btn) {
       btn.disabled = true;
-      btn.textContent = "Đang áp dụng…";
+      btn.textContent = "Đang lưu…";
     }
     const rt = await saveRuntimeSettings();
     showFormMessage(
-      `Đã áp dụng settings: workers=${rt.workerCount}, maxKeywords=${rt.maxKeywords}, headless=${rt.headless}, ` +
-        `limit=${rt.limitEnabled}${rt.limitEnabled ? `(${rt.maxPosts})` : "(∞)"}, keywordFile=${rt.keywordFile}` +
-        `${rt.saveSecretsToDotenv ? ", đã ghi FB_* vào app/.env" : ""}. ` +
-        `Nếu đang chạy run.bat, supervisor sẽ tự tăng/giảm luồng trong vài giây.`,
+      `Đã lưu: ${rt.workerCount} luồng · tối đa ${rt.maxKeywords} từ khóa · lọc ảnh ${
+        rt.postCaptureRecognitionEnabled !== undefined ? (rt.postCaptureRecognitionEnabled ? "bật" : "tắt") : "?"
+      }`,
       "ok"
     );
   } catch (e) {
@@ -1243,7 +1322,7 @@ async function applyRuntimeSettingsNow() {
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = prev || "Áp dụng settings";
+      btn.textContent = prev || "Lưu cấu hình";
     }
   }
 }
@@ -1258,12 +1337,12 @@ async function onStart() {
   const maxPosts = Number.parseInt(String(maxPostsRaw).trim() || "0", 10);
 
   if (keywordsAll.length === 0) {
-    showError("Vui lòng chọn file keywords (.txt) trong folder keyword/.");
+    showError("Chưa có từ khóa — hãy chọn file .txt trong thư mục keyword/");
     return;
   }
 
   if (limitEnabled && (!Number.isFinite(maxPosts) || maxPosts <= 0)) {
-    showError("Bạn đã bật “Dùng giới hạn” nhưng số bài tối đa không hợp lệ.");
+    showError("Đã bật giới hạn số ảnh — nhập số dương trong ô “Số ảnh tối đa”.");
     return;
   }
 
@@ -1274,9 +1353,8 @@ async function onStart() {
     if (keywordsAll.length > rt.maxKeywords) {
       keywords = keywordsAll.slice(0, rt.maxKeywords);
       showFormMessage(
-        `Cảnh báo: file có ${keywordsAll.length} keyword nhưng giới hạn đang là ${rt.maxKeywords}. ` +
-          `Chương trình sẽ chỉ chạy ${keywords.length} keyword đầu tiên.`,
-        "ok"
+        `Chỉ chạy ${keywords.length}/${keywordsAll.length} từ khóa đầu file (đang giới hạn ${rt.maxKeywords} từ khóa).`,
+        "warn"
       );
     }
     const res = await apiJson("/start-job", "POST", {
@@ -1344,6 +1422,7 @@ qs("keywordFile").onchange = () => loadKeywordsFromSelectedFile();
 
 (function bindSettingsPersistence() {
   const headless = qs("headless");
+  const postCaptureRecognition = qs("postCaptureRecognition");
   const limitEnabled = qs("limitEnabled");
   const maxPosts = qs("maxPosts");
   const workerCount = qs("workerCount");
@@ -1353,6 +1432,13 @@ qs("keywordFile").onchange = () => loadKeywordsFromSelectedFile();
   if (headless) {
     headless.checked = lsGetBool(LS.headless, false);
     headless.addEventListener("change", () => lsSet(LS.headless, headless.checked ? "1" : "0"));
+  }
+
+  if (postCaptureRecognition) {
+    postCaptureRecognition.checked = lsGetBool(LS.postCaptureRecognition, true);
+    postCaptureRecognition.addEventListener("change", () =>
+      lsSet(LS.postCaptureRecognition, postCaptureRecognition.checked ? "1" : "0")
+    );
   }
 
   if (limitEnabled) {

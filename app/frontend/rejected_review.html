@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Ảnh bị loại — xem và khôi phục</title>
+    <link rel="stylesheet" href="/assets/styles.css?v=32" />
+    <meta name="theme-color" content="#050507" />
+  </head>
+  <body>
+    <div class="app" style="max-width: 1240px">
+      <header class="topbar">
+        <div class="brand">
+          <div class="logo" aria-hidden="true">↩</div>
+          <div>
+            <div class="title">Ảnh bị loại</div>
+            <div class="subtitle">Folder _rejected · xem gate · khôi phục nếu nhầm</div>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <a href="/" class="btn">Bảng điều khiển</a>
+          <span class="status-pill" id="rrPill">Đang tải…</span>
+        </div>
+      </header>
+
+      <section class="rr-banner">
+        Cạnh PNG có file <code>.reject.json</code> (lý do). Khôi phục = đưa lên folder run, xóa sidecar.
+      </section>
+
+      <section class="card rr-split">
+        <aside class="rr-aside-divider">
+          <div class="field tight-bottom" style="margin-bottom: 10px">
+            <label>Lọc cây thư mục</label>
+            <input id="rrFolderFilter" type="search" placeholder="ngày, keyword…" autocomplete="off" />
+          </div>
+          <div id="rrTree" class="rr-tree rr-empty">Đang chờ…</div>
+        </aside>
+
+        <div class="rr-detail">
+          <div class="tools-row">
+            <div class="field tight-bottom flex-1-min">
+              <label>Tìm file</label>
+              <input id="rrFileFilter" type="search" placeholder="post_00…" autocomplete="off" />
+            </div>
+            <button class="btn primary" type="button" id="rrReload">Tải lại</button>
+          </div>
+          <div class="muted rr-run-line" id="rrMainTitle">—</div>
+          <div class="pill" id="rrStatLine" style="margin-top: 8px; display: inline-block">—</div>
+          <div class="muted" id="rrPostsRootHint" style="margin-top: 8px"></div>
+          <details class="rr-audit" id="rrAuditSummary" style="margin-top: 10px">
+            <summary>Danh sách folder</summary>
+            <pre class="audit-pre mono" id="rrAuditPre"></pre>
+          </details>
+
+          <div id="rrMainGallery" style="margin-top: 14px"></div>
+
+          <section class="card" style="margin-top: 16px; padding: 16px; background: var(--surface)">
+            <div class="card-title" style="font-size: 1rem">Xem trước</div>
+            <div class="hint" style="margin-top: 0">Bấm ảnh để xem chi tiết và lý do lọc</div>
+            <div class="rr-panel" style="margin-top: 12px">
+              <div class="rr-thumb-wrap">
+                <img id="rrBigImg" alt="" style="visibility: hidden" />
+                <div class="muted mono" style="margin-top: 10px; font-size: 11px" id="rrSelectedRel"></div>
+              </div>
+              <div class="rr-meta">
+                <div class="muted" id="rrGateSummary"></div>
+                <div class="mono" style="white-space: pre-wrap; font-size: 12px" id="rrTraceShort"></div>
+                <details class="rr-audit" id="rrMetaDetails">
+                  <summary>JSON đầy đủ</summary>
+                  <pre class="audit-pre mono" id="rrMetaRaw"></pre>
+                </details>
+                <div class="rr-action-row">
+                  <a class="btn" id="rrDownloadBtn" href="#" download style="opacity: 0.4; pointer-events: none">Tải xuống</a>
+                  <button class="btn primary" type="button" id="rrRestoreBtn" disabled>Khôi phục</button>
+                  <button class="btn danger" type="button" id="rrDeleteBtn" disabled>Xoá</button>
+                </div>
+                <button class="btn" type="button" id="rrOpenLb" disabled>Phóng to</button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+    </div>
+
+    <div id="rrLightbox" class="rr-modal" style="display: none">
+      <div class="rr-modal-inner">
+        <button type="button" class="rr-modal-close btn" aria-label="Đóng">×</button>
+        <img id="rrLightboxImg" alt="" />
+      </div>
+    </div>
+
+    <script src="/assets/rejected_review.js?v=32"></script>
+  </body>
+</html>

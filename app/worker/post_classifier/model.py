@@ -263,6 +263,7 @@ class DeepRejectorModel:
 
     mean: list[float]
     std: list[float]
+    created_at: float
     centroids: list[list[float]] | None = None
     rp_dim: int | None = None
     rp_seed: int | None = None
@@ -274,7 +275,6 @@ class DeepRejectorModel:
     foundation_suggested_reject_threshold: float | None = None
     negative_hashes_hex: list[str] | None = None
     max_hamming: int = 6
-    created_at: float
     onnx_url: str | None = None
     suggested_reject_threshold: float | None = None
 
@@ -284,6 +284,7 @@ class DeepRejectorModel:
         return DeepRejectorModel(
             mean=[float(x) for x in (raw.get("mean") or [])],
             std=[float(x) for x in (raw.get("std") or [])],
+            created_at=float(raw.get("created_at") or 0.0),
             centroids=[list(map(float, c)) for c in (raw.get("centroids") or [])] or None,
             rp_dim=int(raw.get("rp_dim") or 0) or None,
             rp_seed=int(raw.get("rp_seed") or 0) or None,
@@ -302,7 +303,6 @@ class DeepRejectorModel:
             ),
             negative_hashes_hex=[str(x) for x in (raw.get("negative_hashes_hex") or [])] or None,
             max_hamming=int(raw.get("max_hamming") or 6),
-            created_at=float(raw.get("created_at") or 0.0),
             onnx_url=str(raw.get("onnx_url") or "") or None,
             suggested_reject_threshold=(
                 float(raw.get("suggested_reject_threshold"))

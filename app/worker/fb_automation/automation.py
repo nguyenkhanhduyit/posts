@@ -51,6 +51,8 @@ class RunParams:
     max_posts: int
     delay_min_sec: float
     delay_max_sec: float
+    # When False: skip ONNX classifier + POST_CAPTURE_* gate/reject logic; save every capture.
+    recognition_enabled: bool = True
 
 
 RECENT_POSTS_FILTERS = (
@@ -2586,56 +2588,11 @@ def capture_posts(
             last_primary_sh_change_at = now
 
     post_classifier_model_path = repo_root() / "app" / "worker" / "post_classifier" / "model.json"
-    post_classifier_kind = _read_json_kind(post_classifier_model_path)
-    post_classifier_deep_suggested_thr = (
-        _read_json_deep_suggested_threshold(post_classifier_model_path) if post_classifier_kind == "deep_rejector_v1" else None
-    )
-    _ai_raw = os.getenv("POST_CLASSIFIER_ENABLED", "")
-    explicit_ai: bool | None
-    if str(_ai_raw or "").strip() == "":
-        explicit_ai = None
-    else:
-        explicit_ai = _env_bool("POST_CLASSIFIER_ENABLED", default=False)
 
-    if explicit_ai is not None:
-        ai_enabled = bool(explicit_ai)
-    else:
-        # Auto-enable only for trained negative-only models. Avoid enabling legacy linear_v1 by default.
-        ai_enabled = post_classifier_kind in {"deep_rejector_v1", "hybrid_rejector_v1", "rejector_v1"}
-
-    ai_budget_s = _env_float("POST_CLASSIFIER_BUDGET_SEC", 3.5)
-    # Threshold meaning depends on model kind:
-    # - rejector kinds: threshold is "reject when similarity-to-negative >= threshold" (high -> safer)
-    # - binary kinds: threshold is "keep when P(positive) >= threshold"
-    if post_classifier_kind in {"deep_binary_v1", "linear_v1"}:
-        ai_thr = _env_float_optional("POST_CLASSIFIER_POS_THRESHOLD")
-        if ai_thr is None:
-            ai_thr = _env_float_optional("POST_CLASSIFIER_THRESHOLD")
-        ai_threshold = float(ai_thr) if ai_thr is not None else 0.60
-    else:
-        # reject-only default
-        ai_threshold_opt = _env_float_optional("POST_CLASSIFIER_REJECT_THRESHOLD")
-        if ai_threshold_opt is None:
-            ai_threshold_opt = _env_float_optional("POST_CLASSIFIER_THRESHOLD")
-        if ai_threshold_opt is None and post_classifier_deep_suggested_thr is not None:
-            ai_threshold = float(post_classifier_deep_suggested_thr)
-        else:
-            ai_threshold = float(ai_threshold_opt) if ai_threshold_opt is not None else 0.85
-    try:
-        if ai_enabled:
-            log(
-                "capture",
-                f"Post classifier ON (kind={post_classifier_kind or 'unknown'}, budget_s={ai_budget_s:.2f}, reject_threshold={ai_threshold:.2f})",
-            )
-        else:
-            log(
-                "capture",
-                "Post classifier OFF "
-                f"(set POST_CLASSIFIER_ENABLED=1 to force; auto enables when model.json kind is "
-                f"deep_binary/deep/hybrid/rejector; current kind={post_classifier_kind or 'missing'})",
-            )
-    except Exception:
-        pass
+    ai_budget_s = 3.5
+    ai_threshold = 0.85
+    ai_enabled = False
+    post_classifier_kind: str | None = None
 
     from app.worker.post_capture_decision import (
         attempt_vlm_rescue_after_reject,
@@ -2645,15 +2602,77 @@ def capture_posts(
         public_config_snapshot,
     )
 
-    try:
-        _gate_cfg = public_config_snapshot()
-        log(
-            "capture",
-            f"Post capture gates: mode={_gate_cfg.get('mode')} "
-            f"(image=ONNX if classifier on; text=keyword+sponsored when mode needs DOM)",
+    if not params.recognition_enabled:
+        try:
+            log(
+                "capture",
+                "Nhận diện bài viết: TẮT (UI/settings) — bỏ qua ONNX và gate/post_capture_*; giữ mọi ảnh chụp.",
+            )
+        except Exception:
+            pass
+    else:
+        post_classifier_kind = _read_json_kind(post_classifier_model_path)
+        post_classifier_deep_suggested_thr = (
+            _read_json_deep_suggested_threshold(post_classifier_model_path)
+            if post_classifier_kind == "deep_rejector_v1"
+            else None
         )
-    except Exception:
-        pass
+        _ai_raw = os.getenv("POST_CLASSIFIER_ENABLED", "")
+        explicit_ai: bool | None
+        if str(_ai_raw or "").strip() == "":
+            explicit_ai = None
+        else:
+            explicit_ai = _env_bool("POST_CLASSIFIER_ENABLED", default=False)
+
+        if explicit_ai is not None:
+            ai_enabled = bool(explicit_ai)
+        else:
+            # Auto-enable only for trained negative-only models. Avoid enabling legacy linear_v1 by default.
+            ai_enabled = post_classifier_kind in {"deep_rejector_v1", "hybrid_rejector_v1", "rejector_v1"}
+
+        ai_budget_s = _env_float("POST_CLASSIFIER_BUDGET_SEC", 3.5)
+        # Threshold meaning depends on model kind:
+        # - rejector kinds: threshold is "reject when similarity-to-negative >= threshold" (high -> safer)
+        # - binary kinds: threshold is "keep when P(positive) >= threshold"
+        if post_classifier_kind in {"deep_binary_v1", "linear_v1"}:
+            ai_thr = _env_float_optional("POST_CLASSIFIER_POS_THRESHOLD")
+            if ai_thr is None:
+                ai_thr = _env_float_optional("POST_CLASSIFIER_THRESHOLD")
+            ai_threshold = float(ai_thr) if ai_thr is not None else 0.60
+        else:
+            # reject-only default
+            ai_threshold_opt = _env_float_optional("POST_CLASSIFIER_REJECT_THRESHOLD")
+            if ai_threshold_opt is None:
+                ai_threshold_opt = _env_float_optional("POST_CLASSIFIER_THRESHOLD")
+            if ai_threshold_opt is None and post_classifier_deep_suggested_thr is not None:
+                ai_threshold = float(post_classifier_deep_suggested_thr)
+            else:
+                ai_threshold = float(ai_threshold_opt) if ai_threshold_opt is not None else 0.85
+        try:
+            if ai_enabled:
+                log(
+                    "capture",
+                    f"Post classifier ON (kind={post_classifier_kind or 'unknown'}, budget_s={ai_budget_s:.2f}, reject_threshold={ai_threshold:.2f})",
+                )
+            else:
+                log(
+                    "capture",
+                    "Post classifier OFF "
+                    f"(set POST_CLASSIFIER_ENABLED=1 to force; auto enables when model.json kind is "
+                    f"deep_binary/deep/hybrid/rejector; current kind={post_classifier_kind or 'missing'})",
+                )
+        except Exception:
+            pass
+
+        try:
+            _gate_cfg = public_config_snapshot()
+            log(
+                "capture",
+                f"Post capture gates: mode={_gate_cfg.get('mode')} "
+                f"(image=ONNX if classifier on; text=keyword+sponsored when mode needs DOM)",
+            )
+        except Exception:
+            pass
 
     try:
         while True:
@@ -2942,6 +2961,18 @@ def capture_posts(
                 log("capture", f"Post screenshot error (will retry): posinset={want_pos} err={e}", "WARN")
                 continue
 
+            if not params.recognition_enabled:
+                saved += 1
+                next_index += 1
+                last_pos = want_pos
+                last_saved_at = time.time()
+                progress(saved, -1 if unlimited else params.max_posts)
+                log("capture", f"Saved {final_path.name} (posinset={want_pos})")
+                _sleep_action(params, log=log, reason="after capture")
+                if not unlimited and saved >= int(params.max_posts):
+                    break
+                continue
+
             # Multi-signal gate: vision (ONNX) + optional DOM text (keyword / sponsored) — see POST_CAPTURE_MODE.
             dom_msg = ""
             try:
@@ -3035,6 +3066,28 @@ def capture_posts(
                     final_path.replace(new_path)
                 except Exception:
                     new_path = final_path
+                try:
+                    meta_path = rej_dir / f"{Path(new_path.name).stem}.reject.json"
+                    meta_path.write_text(
+                        json.dumps(
+                            {
+                                "version": 1,
+                                "searchKeyword": params.keyword,
+                                "outputFolder": out_dir.name,
+                                "rejectedAt": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
+                                "filename": new_path.name,
+                                "gateSummary": gate.summary,
+                                "gateTrace": gate.trace,
+                                "vlmRescueTrace": rescue_tr,
+                            },
+                            ensure_ascii=False,
+                            indent=2,
+                            default=str,
+                        ),
+                        encoding="utf-8",
+                    )
+                except Exception:
+                    pass
                 try:
                     log(
                         "capture",

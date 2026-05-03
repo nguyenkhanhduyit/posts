@@ -1,42 +1,48 @@
-2026/05/01-22:51:33.307 8ab4 Reusing MANIFEST C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w1\Default\Local Storage\leveldb/MANIFEST-000001
-2026/05/01-22:51:33.315 8ab4 Recovering log #58
-2026/05/01-22:51:33.317 8ab4 Reusing old log C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w1\Default\Local Storage\leveldb/000058.log 
-2026/05/01-22:53:35.462 8fb4 Level-0 table #62: started
-2026/05/01-22:53:35.467 8fb4 Level-0 table #62: 20907 bytes OK
-2026/05/01-22:53:35.469 8fb4 Delete type=0 #58
-2026/05/01-23:00:40.008 8fb4 Level-0 table #64: started
-2026/05/01-23:00:40.025 8fb4 Level-0 table #64: 32143 bytes OK
-2026/05/01-23:00:40.028 8fb4 Delete type=0 #61
-2026/05/01-23:00:40.029 8fb4 Compacting 4@0 + 1@1 files
-2026/05/01-23:00:40.044 8fb4 Generated table #65@0: 818 keys, 64182 bytes
-2026/05/01-23:00:40.046 8fb4 Compacted 4@0 + 1@1 files => 64182 bytes
-2026/05/01-23:00:40.047 8fb4 compacted to: files[ 0 1 1 0 0 0 0 ]
-2026/05/01-23:00:40.055 8fb4 Delete type=2 #54
-2026/05/01-23:00:40.055 8fb4 Delete type=2 #56
-2026/05/01-23:00:40.055 8fb4 Delete type=2 #59
-2026/05/01-23:00:40.055 8fb4 Delete type=2 #62
-2026/05/01-23:00:40.055 8fb4 Delete type=2 #64
-2026/05/01-23:34:40.026 8fb4 Level-0 table #67: started
-2026/05/01-23:34:40.033 8fb4 Level-0 table #67: 17172 bytes OK
-2026/05/01-23:34:40.036 8fb4 Delete type=0 #63
-2026/05/02-00:06:40.034 8fb4 Level-0 table #69: started
-2026/05/02-00:06:40.047 8fb4 Level-0 table #69: 16704 bytes OK
-2026/05/02-00:06:40.051 8fb4 Delete type=0 #66
-2026/05/02-00:12:40.018 8fb4 Level-0 table #71: started
-2026/05/02-00:12:40.030 8fb4 Level-0 table #71: 30723 bytes OK
-2026/05/02-00:12:40.033 8fb4 Delete type=0 #68
-2026/05/02-00:52:40.074 8ab4 Level-0 table #73: started
-2026/05/02-00:52:40.114 8ab4 Level-0 table #73: 12931 bytes OK
-2026/05/02-00:52:40.119 8ab4 Delete type=0 #70
-2026/05/02-00:52:40.121 8ab4 Compacting 4@0 + 1@1 files
-2026/05/02-00:52:40.146 8ab4 Generated table #74@0: 1003 keys, 44854 bytes
-2026/05/02-00:52:40.146 8ab4 Compacted 4@0 + 1@1 files => 44854 bytes
-2026/05/02-00:52:40.146 8ab4 compacted to: files[ 0 1 1 0 0 0 0 ]
-2026/05/02-00:52:40.148 8ab4 Delete type=2 #65
-2026/05/02-00:52:40.150 8ab4 Delete type=2 #67
-2026/05/02-00:52:40.152 8ab4 Delete type=2 #69
-2026/05/02-00:52:40.152 8ab4 Delete type=2 #71
-2026/05/02-00:52:40.152 8ab4 Delete type=2 #73
-2026/05/02-01:08:40.040 8ab4 Level-0 table #76: started
-2026/05/02-01:08:40.068 8ab4 Level-0 table #76: 29000 bytes OK
-2026/05/02-01:08:40.089 8ab4 Delete type=0 #72
+2026/05/02-01:29:32.896 9120 Reusing MANIFEST C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w1\Default\Local Storage\leveldb/MANIFEST-000001
+2026/05/02-01:29:32.926 9120 Recovering log #75
+2026/05/02-01:29:32.997 9120 Reusing old log C:\Users\nguyenkhanhduyit\Desktop\Posts\app\chrome-profile-w1\Default\Local Storage\leveldb/000075.log 
+2026/05/02-01:34:34.937 9120 Level-0 table #79: started
+2026/05/02-01:34:34.943 9120 Level-0 table #79: 45906 bytes OK
+2026/05/02-01:34:34.945 9120 Delete type=0 #75
+2026/05/02-01:40:34.922 9120 Level-0 table #81: started
+2026/05/02-01:40:34.941 9120 Level-0 table #81: 30605 bytes OK
+2026/05/02-01:40:34.944 9120 Delete type=0 #78
+2026/05/02-02:05:34.946 4ebc Level-0 table #83: started
+2026/05/02-02:05:34.957 4ebc Level-0 table #83: 77178 bytes OK
+2026/05/02-02:05:34.960 4ebc Delete type=0 #80
+2026/05/02-02:05:34.962 9120 Compacting 4@0 + 1@1 files
+2026/05/02-02:05:34.978 9120 Generated table #84@0: 1191 keys, 135698 bytes
+2026/05/02-02:05:34.978 9120 Compacted 4@0 + 1@1 files => 135698 bytes
+2026/05/02-02:05:34.979 9120 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/05/02-02:05:34.981 9120 Delete type=2 #74
+2026/05/02-02:05:34.982 9120 Delete type=2 #76
+2026/05/02-02:05:34.982 9120 Delete type=2 #79
+2026/05/02-02:05:34.982 9120 Delete type=2 #81
+2026/05/02-02:05:34.982 9120 Delete type=2 #83
+2026/05/02-02:13:34.920 4ebc Level-0 table #86: started
+2026/05/02-02:13:34.925 4ebc Level-0 table #86: 27051 bytes OK
+2026/05/02-02:13:34.927 4ebc Delete type=0 #82
+2026/05/02-02:19:34.924 4ebc Level-0 table #88: started
+2026/05/02-02:19:34.931 4ebc Level-0 table #88: 26476 bytes OK
+2026/05/02-02:19:34.932 4ebc Delete type=0 #85
+2026/05/02-02:24:34.927 4ebc Level-0 table #90: started
+2026/05/02-02:24:34.933 4ebc Level-0 table #90: 23951 bytes OK
+2026/05/02-02:24:34.936 4ebc Delete type=0 #87
+2026/05/02-02:25:34.931 4ebc Level-0 table #92: started
+2026/05/02-02:25:34.947 4ebc Level-0 table #92: 90997 bytes OK
+2026/05/02-02:25:34.949 4ebc Delete type=0 #89
+2026/05/02-02:25:34.950 4ebc Compacting 4@0 + 1@1 files
+2026/05/02-02:25:34.961 4ebc Generated table #93@0: 1284 keys, 172312 bytes
+2026/05/02-02:25:34.961 4ebc Compacted 4@0 + 1@1 files => 172312 bytes
+2026/05/02-02:25:34.962 4ebc compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/05/02-02:25:34.964 4ebc Delete type=2 #84
+2026/05/02-02:25:34.964 4ebc Delete type=2 #86
+2026/05/02-02:25:34.964 4ebc Delete type=2 #88
+2026/05/02-02:25:34.964 4ebc Delete type=2 #90
+2026/05/02-02:25:34.964 4ebc Delete type=2 #92
+2026/05/02-02:31:34.951 9120 Level-0 table #95: started
+2026/05/02-02:31:34.970 9120 Level-0 table #95: 41704 bytes OK
+2026/05/02-02:31:34.973 9120 Delete type=0 #91
+2026/05/02-04:10:34.929 4ebc Level-0 table #97: started
+2026/05/02-04:10:34.946 4ebc Level-0 table #97: 8183 bytes OK
+2026/05/02-04:10:34.949 4ebc Delete type=0 #94
