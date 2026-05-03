@@ -440,7 +440,7 @@ function maybeAppendJobSummary(panel, job) {
   const jobId = String(job.id);
   if (panel.summarizedJobIds && panel.summarizedJobIds.has(jobId)) return;
 
-  const startedMs = _parseIsoMs(job.started_at);
+  const startedMs = _parseIsoMs(job.started_at) ?? _parseIsoMs(job.created_at);
   const finishedMs = _parseIsoMs(job.finished_at);
   if (!startedMs || !finishedMs) return;
 
@@ -511,23 +511,257 @@ async function apiJson(path, method = "GET", body = null) {
   return await res.json();
 }
 
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function fmtIso(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return String(iso);
+    return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  } catch {
+    return String(iso);
+  }
+}
+
+function renderTrainStatus(data) {
+  const pill = qs("trainRuntimePill");
+  const body = qs("trainStatusBody");
+  if (!body) return;
+
+  const rt = data?.runtime || {};
+  const ds = data?.dataset || {};
+  const md = data?.model || {};
+  const lt = data?.lastTrain;
+
+  if (pill) {
+    const mode = String(rt.postClassifierEnabledMode || "").toLowerCase();
+    const auto = !!rt.postClassifierAutoEnabled;
+    const mtxt = mode === "forced" ? "ép" : "tự";
+    pill.textContent = rt.postClassifierEnabled
+      ? `Lọc ảnh khi chụp: BẬT (${mtxt}${mode === "auto" ? (auto ? "" : " (model chưa hỗ trợ)") : ""})`
+      : `Lọc ảnh khi chụp: TẮT (${mtxt})`;
+    pill.className = "train-status-pill" + (rt.postClassifierEnabled ? " ok" : " off");
+  }
+
+  const rows = [];
+  rows.push(["Thư mục dataset", String(ds.root || "—")]);
+  rows.push([
+    "Số ảnh negative",
+    `${ds.negativeCount ?? "—"}${ds.countsTruncated ? " (≥, đếm tối đa 2500)" : ""}`,
+  ]);
+  rows.push(["Engine / ONNX", `${rt.engine ?? "—"} / ${rt.onnxVariant ?? "—"}`]);
+  rows.push([
+    "Ngưỡng loại / nguồn / budget",
+    `${rt.threshold ?? "—"} (${rt.thresholdSource ?? "—"}) / ${rt.budgetSec ?? "—"}s`,
+  ]);
+  rows.push([
+    "Deep recheck / cache emb",
+    `${rt.deepRecheckMargin ?? "—"} / ${rt.deepEmbCache ?? "—"}`,
+  ]);
+  rows.push(["Hash max dist", `${rt.hashMaxDist ?? "—"}`]);
+  rows.push(["ORT threads (intra/inter)", `${rt.ortThreads ?? "—"} / ${rt.ortInterThreads ?? "—"}`]);
+  rows.push(["File model", md.exists ? "Có trên disk" : "Chưa có"]);
+  rows.push(["Model kind", String(md.kind || "—")]);
+  if (md.suggestedRejectThreshold != null) rows.push(["Model suggested threshold", String(md.suggestedRejectThreshold)]);
+  if (md.deepK != null) rows.push(["Deep centroids (K)", String(md.deepK)]);
+  if (md.hashes != null) rows.push(["Deep hashes", String(md.hashes)]);
+  rows.push(["File model — cập nhật lần cuối", fmtIso(md.fileModifiedAt)]);
+  rows.push(["Train trong model (UTC)", fmtIso(md.trainedCreatedAtIso)]);
+
+  if (lt && typeof lt === "object" && Object.keys(lt).length > 0 && lt.phase && lt.phase !== "running") {
+    rows.push(["Train gần nhất — phase", String(lt.phase)]);
+    rows.push([
+      "Train gần nhất — kết quả",
+      lt.ok === true ? "OK" : lt.exitCode === 2 ? "Bỏ qua (thiếu ảnh)" : "Lỗi / không OK",
+    ]);
+    rows.push(["Train gần nhất — chi tiết", String(lt.message || "—")]);
+    rows.push(["Train gần nhất — xong lúc", fmtIso(lt.finishedAt || lt.updatedAt)]);
+    rows.push(["Train gần nhất — mã thoát", lt.exitCode != null ? String(lt.exitCode) : "—"]);
+    if (lt.durationMs != null) rows.push(["Train gần nhất — thời gian", `${lt.durationMs} ms`]);
+  } else if (lt && lt.phase === "running") {
+    rows.push(["Train hiện tại", "Đang chạy… (nếu bạn bấm Train từ CLI)"]);
+  } else {
+    rows.push([
+      "Log train (UI)",
+      "Chưa có file log train. Chạy run.bat (train tự động) hoặc: python -m app.worker.post_classifier.train",
+    ]);
+  }
+
+  body.innerHTML = rows
+    .map(
+      ([k, v]) =>
+        `<div class="train-k">${escapeHtml(k)}</div><div class="train-v">${escapeHtml(String(v))}</div>`
+    )
+    .join("");
+}
+
+async function refreshTrainStatus() {
+  const body = qs("trainStatusBody");
+  try {
+    const j = await apiJson("/post-classifier/status", "GET");
+    renderTrainStatus(j);
+  } catch (e) {
+    if (body) {
+      body.textContent = `Không đọc được trạng thái train: ${String(e.message || e)}`;
+    }
+  }
+}
+
+async function startTrainNow() {
+  const btn = qs("trainNowBtn");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Đang chạy…";
+  }
+  try {
+    const res = await apiJson("/post-classifier/train", "POST", {});
+    if (res && res.ok) {
+      showFormMessage(`Đã start train (pid=${res.pid}).`, "ok");
+    } else if (res && res.running) {
+      showFormMessage(`Train đang chạy sẵn (pid=${res.pid || "?"}).`, "warn");
+    } else {
+      showFormMessage("Không start được train (không rõ lý do).", "error");
+    }
+  } catch (e) {
+    showFormMessage(`Không start được train: ${String(e.message || e)}`, "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Start train";
+    }
+    await refreshTrainStatus();
+  }
+}
+
+async function renderUncertain() {
+  const grid = qs("uncertainGrid");
+  const pill = qs("uncertainPill");
+  if (!grid) return;
+  try {
+    const j = await apiJson("/post-classifier/uncertain/list", "GET");
+    const items = Array.isArray(j?.items) ? j.items : [];
+    if (pill) {
+      pill.textContent = items.length > 0 ? `Có ${items.length} ảnh cần dán nhãn` : "Không có ảnh uncertain";
+      pill.className = "train-status-pill" + (items.length > 0 ? " ok" : " off");
+    }
+    if (items.length === 0) {
+      grid.innerHTML =
+        `<div class="hint" style="padding:10px">Chưa có ảnh uncertain. Bật <code>POST_CLASSIFIER_AUTO_COLLECT=1</code> rồi chạy chụp, hoặc tăng <code>POST_CLASSIFIER_AUTO_COLLECT_MARGIN</code>.</div>`;
+      return;
+    }
+    const cardHtml = (it) => {
+      const rel = String(it.rel || "");
+      const url = String(it.url || "");
+      const bucket = String(it.bucket || "");
+      const name = String(it.name || "");
+      return `
+        <div class="uncertain-card">
+          <img class="uncertain-img" src="${escapeHtml(url)}" alt="${escapeHtml(name)}" loading="lazy" />
+          <div class="uncertain-meta"><b>${escapeHtml(bucket || "—")}</b><br/>${escapeHtml(name)}</div>
+          <div class="uncertain-actions">
+            <button class="btn small" data-act="pos" data-rel="${escapeHtml(rel)}">→ positive</button>
+            <button class="btn small" data-act="neg" data-rel="${escapeHtml(rel)}">→ negative</button>
+            <button class="btn small danger" data-act="del" data-rel="${escapeHtml(rel)}">Xoá</button>
+          </div>
+        </div>`;
+    };
+    grid.innerHTML = items.map(cardHtml).join("");
+
+    grid.onclick = async (ev) => {
+      const btn = ev?.target?.closest?.("button[data-act]");
+      if (!btn) return;
+      const act = String(btn.getAttribute("data-act") || "");
+      const rel = String(btn.getAttribute("data-rel") || "");
+      if (!rel) return;
+      btn.disabled = true;
+      try {
+        if (act === "pos" || act === "neg") {
+          const target = act === "pos" ? "positive" : "negative";
+          await apiJson("/post-classifier/uncertain/move", "POST", { rel, target });
+        } else if (act === "del") {
+          await apiJson("/post-classifier/uncertain/delete", "POST", { rel });
+        }
+      } catch (e) {
+        showFormMessage(`Không thao tác được uncertain: ${String(e.message || e)}`, "error");
+      } finally {
+        await renderUncertain();
+        await refreshTrainStatus();
+      }
+    };
+  } catch (e) {
+    if (pill) {
+      pill.textContent = "Lỗi load uncertain";
+      pill.className = "train-status-pill off";
+    }
+    grid.innerHTML = `<div class="error" style="padding:10px">Không tải được uncertain: ${escapeHtml(String(e.message || e))}</div>`;
+  }
+}
+
 function badgeClass(status) {
   return ["pending", "running", "done", "error", "cancelled"].includes(status)
     ? status
     : "pending";
 }
 
+function parseIsoMs(iso) {
+  if (!iso) return null;
+  try {
+    const t = Date.parse(String(iso));
+    return Number.isFinite(t) ? t : null;
+  } catch {
+    return null;
+  }
+}
+
+function fmtDurationMs(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n < 0) return "—";
+  const s = Math.floor(n / 1000);
+  const hh = Math.floor(s / 3600);
+  const mm = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  if (hh > 0) return `${hh}h${String(mm).padStart(2, "0")}m`;
+  if (mm > 0) return `${mm}m${String(ss).padStart(2, "0")}s`;
+  return `${ss}s`;
+}
+
 function jobLine(job) {
   const st = (job.status || "").toString().padEnd(9, " ").slice(0, 9);
   const prog = `${job.progress_current ?? 0}/${job.progress_total ?? 0}`.padEnd(9, " ").slice(0, 9);
   const created = (job.created_at || "").toString();
+  const startedMs = parseIsoMs(job.started_at);
+  const createdMs = parseIsoMs(job.created_at);
+  const finishedMs = parseIsoMs(job.finished_at);
+  const nowMs = Date.now();
+  let durMs = null;
+  if (String(job.status || "") === "running") {
+    durMs = startedMs != null ? nowMs - startedMs : createdMs != null ? nowMs - createdMs : null;
+  } else if (finishedMs != null) {
+    durMs =
+      startedMs != null
+        ? finishedMs - startedMs
+        : createdMs != null
+          ? finishedMs - createdMs
+          : null;
+  } else if (String(job.status || "") === "pending") {
+    durMs = createdMs != null ? nowMs - createdMs : null;
+  }
+  const dur = fmtDurationMs(durMs).padEnd(7, " ").slice(0, 7);
   const kw = (job.keyword || "").toString().replaceAll("\n", " ").trim();
   const wid =
     job.last_worker_id != null && String(job.last_worker_id).trim() !== ""
       ? ` [w${String(job.last_worker_id).trim()}]`
       : "";
   const err = job.last_error ? ` | error: ${String(job.last_error).replaceAll("\n", " ")}` : "";
-  return `${st} | ${prog} | ${created} | ${kw}${wid}${err}`;
+  return `${st} | ${prog} | ${dur} | ${created} | ${kw}${wid}${err}`;
 }
 
 function isFinished(status) {
@@ -546,7 +780,7 @@ function renderJobs(jobs) {
   if (!showAllJobs) list = list.slice(0, JOBS_PAGE_SIZE);
   lastRenderedJobs = [...list];
 
-  const header = "STATUS    | PROGRESS   | CREATED                 | KEYWORD";
+  const header = "STATUS    | PROGRESS   | DUR     | CREATED                 | KEYWORD";
   const lines = [header, ...list.map(jobLine)];
   jobsText.value = lines.join("\n");
 
@@ -583,6 +817,18 @@ async function refreshJobs() {
     if (isFinishedJobStatus(String(job.status || ""))) {
       maybeAppendJobSummary(p, job);
     }
+  }
+
+  // ALSO append summaries for OLD finished keywords per worker panel.
+  // This makes each worker's log panel show how long its previous keywords took,
+  // even when the UI is currently following a different running job.
+  for (const j of sessionJobs) {
+    const st = String(j.status || "");
+    if (!isFinishedJobStatus(st)) continue;
+    const widRaw = j.last_worker_id != null ? String(j.last_worker_id).trim() : "";
+    const panel = ensureWorkerPanel(widRaw ? `w${widRaw}` : "");
+    if (!panel) continue;
+    maybeAppendJobSummary(panel, j);
   }
 
   // If any job is waiting for checkpoint decision, prompt the user.
@@ -1080,6 +1326,10 @@ const cpContinueBtn = qs("cpContinueBtn");
 if (cpContinueBtn) cpContinueBtn.onclick = () => sendCheckpointDecision("continue");
 const cpReloadBtn = qs("cpReloadBtn");
 if (cpReloadBtn) cpReloadBtn.onclick = () => sendCheckpointDecision("reload");
+const trainNowBtn = qs("trainNowBtn");
+if (trainNowBtn) trainNowBtn.onclick = startTrainNow;
+const refreshUncertainBtn = qs("refreshUncertainBtn");
+if (refreshUncertainBtn) refreshUncertainBtn.onclick = renderUncertain;
 qs("hideFinished").onchange = (e) => {
   hideFinished = !!e.target.checked;
   renderJobs(filterToCurrentSession(lastJobsSnapshot));
@@ -1162,9 +1412,13 @@ qs("keywordFile").onchange = () => loadKeywordsFromSelectedFile();
   await refreshJobs();
   await loadRuntimeSettings();
   await loadKeywordFiles(true);
+  await refreshTrainStatus();
+  await renderUncertain();
   init3DTilt();
   setInterval(refreshJobs, 1500);
   setInterval(checkHealth, 5000);
   setInterval(tickAllPanelRuntimes, 1000);
+  setInterval(refreshTrainStatus, 5000);
+  setInterval(renderUncertain, 5000);
 })();
 

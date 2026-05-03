@@ -129,6 +129,93 @@ code{color:#cfe2ff}
   backdrop-filter: blur(10px);
   font-size: 13px;
 }
+
+.train-status{
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(17,28,51,.72);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(10px);
+  position: relative;
+  z-index: 0;
+}
+.train-status-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:10px;
+}
+.train-status-actions{
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.train-status-title{
+  font-weight:850;
+  font-size: 14px;
+  color: rgba(207,226,255,.92);
+}
+.train-status-pill{
+  font-size:12px;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid var(--line);
+  color:var(--muted);
+  white-space:nowrap;
+}
+.train-status-pill.ok{ color: var(--ok); border-color: rgba(40,209,124,.35); }
+.train-status-pill.off{ color: rgba(207,226,255,.55); border-color: rgba(255,255,255,.10); }
+.train-status-grid{
+  display:grid;
+  grid-template-columns: minmax(160px, 38%) 1fr;
+  gap: 6px 14px;
+  font-size: 13px;
+  align-items: baseline;
+}
+.train-k{ color: var(--muted); }
+.train-v{ color: var(--text-soft); word-break: break-word; }
+@media (max-width: 720px){
+  .train-status-grid{ grid-template-columns: 1fr; }
+}
+
+.uncertain-grid{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+  padding: 12px;
+}
+.uncertain-card{
+  background: rgba(17,28,51,.52);
+  border:1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px;
+  box-shadow: var(--shadow-soft);
+}
+.uncertain-img{
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.04);
+}
+.uncertain-meta{
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-word;
+}
+.uncertain-actions{
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.btn.small{
+  padding: 8px 10px;
+  font-size: 12px;
+}
 .stat-tile{
   background: rgba(17,28,51,.72);
   border:1px solid var(--line);

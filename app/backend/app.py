@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import subprocess
+import sys
+import time
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 
@@ -16,6 +19,38 @@ from app.backend.logging_service import JobLogger, LogPaths
 from app.backend.queue.repo import JobRepo, LogRepo
 from app.utils.paths import ensure_dir, repo_root
 
+_PC_DATA_ROOT = (repo_root() / "post_classifier_data").resolve()
+_PC_UNCERTAIN_DIR = (_PC_DATA_ROOT / "_uncertain").resolve()
+_PC_POS_DIR = (_PC_DATA_ROOT / "positive").resolve()
+_PC_NEG_DIR = (_PC_DATA_ROOT / "negative").resolve()
+
+
+def _safe_uncertain_rel(rel: str) -> Path:
+    """
+    Allow only files under post_classifier_data/_uncertain/** with supported image extensions.
+    rel is a posix-like relative path, e.g. "pos_like/xxx.png".
+    """
+    s = (rel or "").strip().replace("\\", "/")
+    if not s or any(x in s for x in ["..", "\x00"]) or s.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid path")
+    p = (_PC_UNCERTAIN_DIR / s).resolve()
+    if _PC_UNCERTAIN_DIR not in p.parents:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    if p.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+    return p
+
+
+def _safe_dataset_filename(name: str) -> str:
+    n = (name or "").strip().replace("\\", "/").split("/")[-1]
+    if not n:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    if any(x in n for x in ["..", "\x00"]) or n.startswith("."):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    if Path(n).suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+    return n
+
 settings = load_settings()
 
 conn = connect(settings.sqlite_path)
@@ -26,6 +61,10 @@ log_repo = LogRepo(conn)
 logger = JobLogger(log_repo, LogPaths(logs_root=ensure_dir(repo_root() / "app" / "logs")))
 
 app = FastAPI(title="FB Posts Screenshot Tool", version="1.0.0")
+
+# Optional: background post-classifier training (triggered from UI)
+_TRAIN_PROC: subprocess.Popen | None = None
+_TRAIN_STARTED_AT: float | None = None
 
 _STATE_KEY_WORKER_COUNT = "worker_count"
 _STATE_KEY_MAX_KEYWORDS = "max_keywords"
@@ -352,6 +391,164 @@ def index() -> FileResponse:
 @app.get("/health")
 def health() -> dict:
     return {"ok": True}
+
+
+@app.get("/post-classifier/status")
+def post_classifier_status() -> JSONResponse:
+    from app.worker.post_classifier.train_status import build_public_status
+
+    global _TRAIN_PROC, _TRAIN_STARTED_AT
+    proc_running = False
+    pid = None
+    started_at = None
+    try:
+        if _TRAIN_PROC is not None and _TRAIN_PROC.poll() is None:
+            proc_running = True
+            pid = int(getattr(_TRAIN_PROC, "pid", 0) or 0) or None
+            started_at = _TRAIN_STARTED_AT
+        else:
+            _TRAIN_PROC = None
+            _TRAIN_STARTED_AT = None
+    except Exception:
+        _TRAIN_PROC = None
+        _TRAIN_STARTED_AT = None
+
+    data = build_public_status()
+    data["server"] = {
+        "trainProcessRunning": bool(proc_running),
+        "pid": pid,
+        "startedAtUnix": started_at,
+    }
+    return JSONResponse(data)
+
+
+@app.post("/post-classifier/train")
+def post_classifier_train() -> JSONResponse:
+    """
+    Trigger background training from the UI.
+    Safe: does not block the server; rejects if a train process is already running.
+    """
+    global _TRAIN_PROC, _TRAIN_STARTED_AT
+    if _TRAIN_PROC is not None:
+        try:
+            if _TRAIN_PROC.poll() is None:
+                return JSONResponse({"ok": False, "running": True, "pid": int(getattr(_TRAIN_PROC, "pid", 0) or 0)})
+        except Exception:
+            _TRAIN_PROC = None
+            _TRAIN_STARTED_AT = None
+
+    # Run in a separate process so the backend stays responsive.
+    # Use current interpreter (venv) since supervisor launches backend with sys.executable.
+    try:
+        _TRAIN_STARTED_AT = time.time()
+        _TRAIN_PROC = subprocess.Popen(
+            [sys.executable, "-m", "app.worker.post_classifier.train"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=str(repo_root()),
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+        )
+        return JSONResponse({"ok": True, "running": True, "pid": int(getattr(_TRAIN_PROC, "pid", 0) or 0)})
+    except Exception as e:
+        _TRAIN_PROC = None
+        _TRAIN_STARTED_AT = None
+        raise HTTPException(status_code=500, detail=f"Cannot start training: {e}")
+
+
+@app.get("/post-classifier/uncertain/list")
+def post_classifier_uncertain_list(limit: int = Query(120, ge=1, le=500)) -> JSONResponse:
+    """
+    List uncertain samples collected by worker (active learning).
+    """
+    items: list[dict] = []
+    base = _PC_UNCERTAIN_DIR
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    exts = {".png", ".jpg", ".jpeg", ".webp"}
+    try:
+        # Newest first for UX.
+        files = [p for p in base.rglob("*") if p.is_file() and p.suffix.lower() in exts]
+        files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        for p in files[: int(limit)]:
+            rel = p.relative_to(base).as_posix()
+            bucket = rel.split("/", 1)[0] if "/" in rel else ""
+            items.append(
+                {
+                    "rel": rel,
+                    "bucket": bucket,
+                    "name": p.name,
+                    "modifiedAt": p.stat().st_mtime,
+                    "url": f"/post-classifier/uncertain/file?rel={rel}",
+                }
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cannot list uncertain: {e}")
+    return JSONResponse({"ok": True, "count": len(items), "items": items})
+
+
+@app.get("/post-classifier/uncertain/file")
+def post_classifier_uncertain_file(rel: str = Query(...)) -> FileResponse:
+    p = _safe_uncertain_rel(rel)
+    if not p.exists() or not p.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(str(p))
+
+
+@app.post("/post-classifier/uncertain/move")
+def post_classifier_uncertain_move(payload: dict) -> JSONResponse:
+    """
+    Move an uncertain file to positive/negative dataset.
+    payload: { rel: "bucket/file.png", target: "positive"|"negative" }
+    """
+    rel = str(payload.get("rel", "")).strip()
+    target = str(payload.get("target", "")).strip().lower()
+    if target not in {"positive", "negative"}:
+        raise HTTPException(status_code=400, detail="Invalid target")
+    src = _safe_uncertain_rel(rel)
+    if not src.exists():
+        raise HTTPException(status_code=404, detail="Not found")
+    dst_dir = _PC_POS_DIR if target == "positive" else _PC_NEG_DIR
+    try:
+        dst_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    dst_name = _safe_dataset_filename(src.name)
+    dst = (dst_dir / dst_name).resolve()
+    # Avoid overwrite: append suffix if needed.
+    if dst.exists():
+        stem = dst.stem
+        suf = dst.suffix
+        i = 2
+        while True:
+            cand = (dst_dir / f"{stem}_{i}{suf}").resolve()
+            if not cand.exists():
+                dst = cand
+                break
+            i += 1
+            if i > 999:
+                raise HTTPException(status_code=409, detail="Too many duplicates")
+    try:
+        src.replace(dst)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cannot move file: {e}")
+    return JSONResponse({"ok": True, "movedTo": str(dst), "target": target})
+
+
+@app.post("/post-classifier/uncertain/delete")
+def post_classifier_uncertain_delete(payload: dict) -> JSONResponse:
+    rel = str(payload.get("rel", "")).strip()
+    p = _safe_uncertain_rel(rel)
+    if not p.exists():
+        return JSONResponse({"ok": True, "deleted": False})
+    try:
+        p.unlink()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cannot delete: {e}")
+    return JSONResponse({"ok": True, "deleted": True})
+
 
 @app.get("/keywords/files")
 def keyword_files() -> JSONResponse:

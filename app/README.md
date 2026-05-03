@@ -54,6 +54,56 @@ Tool tự động tìm kiếm bài viết Facebook theo keyword và chụp ảnh
 
 `posts/YYYY-MM-DD/<keyword_sanitized>/post_001.png ...`
 
+## Nhận diện "bài viết cần chụp" (AI nhanh)
+
+Tool có thể bật bộ phân loại ảnh nhẹ (CPU-only) để loại các ảnh không phải "bài viết cần chụp" ngay sau khi chụp.
+
+### Dataset (thư mục gốc)
+
+- `post_classifier_data/positive/`: ảnh **là** bài viết cần chụp
+- `post_classifier_data/negative/`: ảnh **không** phải bài viết cần chụp
+
+### Train model
+
+Chạy từ thư mục gốc:
+
+```bash
+python -m app.worker.post_classifier.train
+```
+
+Model sẽ được lưu ở `app/worker/post_classifier/model.json`.
+
+### CNN deep (CPU) — tự động qua `run.bat`
+
+`run.bat` sẽ tự:
+- tạo lại `app/.venv` bằng **Python 3.10** nếu venv hiện tại không phải 3.10 (để cài được `numpy/onnxruntime`)
+- cài `app/requirements-deep.txt`
+- mặc định `POST_CLASSIFIER_ENGINE=deep` (CNN negative-only)
+
+Nếu bạn muốn tắt CNN và dùng hybrid nhanh nhẹ hơn: `set POST_CLASSIFIER_ENGINE=hybrid` trước khi chạy `run.bat`.
+
+### Bật khi chạy worker
+
+Worker đọc `app/.env` qua `load_settings()` ở đầu `app/worker/runner.py`.
+
+- Mặc định: nếu **không** set `POST_CLASSIFIER_ENABLED`, worker sẽ **tự bật** classifier khi tồn tại
+  `app/worker/post_classifier/model.json` với `kind` thuộc `{deep_binary_v1, deep_rejector_v1, hybrid_rejector_v1, rejector_v1}`.
+  (Tránh bật nhầm với model legacy `linear_v1`.)
+- `POST_CLASSIFIER_ENABLED=1` để **ép bật** (kể cả khi model chưa đúng/kind không hỗ trợ).
+- `POST_CLASSIFIER_ENABLED=0` để **ép tắt** (kể cả khi đã train xong).
+- `POST_CLASSIFIER_BUDGET_SEC=3.5` (giới hạn thời gian nhận diện mỗi ảnh)
+- `POST_CLASSIFIER_REJECT_THRESHOLD=0.85` (rejector/negative-only: ngưỡng loại; tăng => loại ít hơn)
+- `POST_CLASSIFIER_POS_THRESHOLD=0.60` (binary: giữ ảnh nếu \(P(positive)\) ≥ ngưỡng; tăng => giữ ít hơn)
+- `POST_CLASSIFIER_ONNX_VARIANT=fp32|int8` (int8 nhanh hơn, fp32 ổn định hơn)
+- `POST_CLASSIFIER_DEEP_RECHECK_MARGIN=0.03` (deep: nếu score sát ngưỡng thì chạy recheck multi-crop; tăng => chắc hơn nhưng chậm hơn)
+- `POST_CLASSIFIER_DEEP_EMB_CACHE=256` (deep: cache embedding theo file để retry nhanh hơn; 0 để tắt)
+- `POST_CLASSIFIER_ORT_INTER_THREADS=0` (tùy máy: set 1..4 nếu muốn ORT song song hơn)
+- `POST_CLASSIFIER_OPENSET_GATING=1` (deep: tăng ngưỡng loại động trên ảnh “khó” để giảm loại nhầm; không cần positive)
+- `POST_CLASSIFIER_GATING_MARGIN=0.06` (chỉ gating khi score sát ngưỡng)
+- `POST_CLASSIFIER_GATING_MAX_BOOST=0.10` (mức tăng ngưỡng tối đa khi ảnh rất “khó”)
+
+Khi AI từ chối, ảnh sẽ được chuyển vào folder con: `<run_folder>/_rejected/`.
+
 ## Lưu ý vận hành
 
 - Worker chạy tuần tự (concurrency=1).

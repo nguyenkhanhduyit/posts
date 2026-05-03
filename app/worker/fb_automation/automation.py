@@ -6,6 +6,8 @@ import re
 import time
 import hashlib
 import uuid
+import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
@@ -16,6 +18,7 @@ from urllib.parse import urlparse, parse_qs
 from app.utils.sanitize import sanitize_keyword_for_path
 from app.utils.timeutil import local_date_yyyy_mm_dd
 from app.utils.imagehash import dhash64_int_bytes, hamming_distance_u64
+from app.utils.paths import repo_root
 
 from app.worker.fb_automation.selectors import (
     FEED_FALLBACK_CLASS,
@@ -76,6 +79,107 @@ def _env_float(name: str, default: float) -> float:
         return float(s)
     except Exception:
         return default
+
+
+def _env_float_optional(name: str) -> float | None:
+    raw = os.getenv(name, "")
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if s == "":
+        return None
+    try:
+        return float(s)
+    except Exception:
+        return None
+
+
+def _post_dom_message_preview(post, max_chars: int = 3200) -> str:
+    """
+    Prefer message/ad-preview body text inside the post subtree (less noise than full card chrome).
+    Used for keyword / sponsored heuristics when POST_CAPTURE_MODE uses text.
+    """
+    mc = max(120, min(int(max_chars), 12000))
+    try:
+        return str(
+            post.evaluate(
+                """(el, n) => {
+                  try {
+                    if (!el) return '';
+                    const msg =
+                      el.querySelector('[data-ad-preview="message"]') ||
+                      el.querySelector('[data-ad-comet-preview="message"]') ||
+                      el.querySelector('div[data-ad-preview="text"]');
+                    const root = msg || el;
+                    const t = root.innerText || root.textContent || '';
+                    return (t||'').replace(/\\s+/g,' ').trim().slice(0, Math.max(0, n));
+                  } catch (e) { return ''; }
+                }""",
+                mc,
+            )
+            or ""
+        )
+    except Exception:
+        return ""
+
+
+def _post_dom_media_flags(post) -> dict:
+    """
+    Lightweight media / permalink counters inside the post element (viewport-ish sizes).
+    """
+    try:
+        out = post.evaluate(
+            """(el) => {
+              try {
+                if (!el) return { imgVisibleCount: 0, videoVisibleCount: 0, hasPermalink: false };
+                const root = el;
+                const imgs = Array.from(root.querySelectorAll('img')).filter(im => {
+                  try {
+                    const r = im.getBoundingClientRect();
+                    return r && r.width >= 40 && r.height >= 40;
+                  } catch (e) { return false; }
+                });
+                const videos = Array.from(root.querySelectorAll('video')).filter(v => {
+                  try {
+                    const r = v.getBoundingClientRect();
+                    return r && r.width >= 40 && r.height >= 28;
+                  } catch (e) { return false; }
+                });
+                const hasPermalink = !!root.querySelector(
+                  'a[href*="story_fbid"],a[href*="/posts/"],a[href*="permalink"],a[href*="permalink.php"]'
+                );
+                return { imgVisibleCount: imgs.length, videoVisibleCount: videos.length, hasPermalink: !!hasPermalink };
+              } catch (e) {
+                return { imgVisibleCount: 0, videoVisibleCount: 0, hasPermalink: false };
+              }
+            }""",
+        )
+        return dict(out) if isinstance(out, dict) else {}
+    except Exception:
+        return {"imgVisibleCount": 0, "videoVisibleCount": 0, "hasPermalink": False}
+
+
+def _read_json_kind(path: Path) -> str:
+    try:
+        if not path.exists():
+            return ""
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        return str(raw.get("kind") or "").strip().lower()
+    except Exception:
+        return ""
+
+
+def _read_json_deep_suggested_threshold(path: Path) -> float | None:
+    try:
+        if not path.exists():
+            return None
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        v = raw.get("suggested_reject_threshold")
+        if v is None:
+            return None
+        return float(v)
+    except Exception:
+        return None
 
 
 def _rand(a: float, b: float) -> float:
@@ -2480,6 +2584,77 @@ def capture_posts(
         elif abs(p_sh - float(last_primary_sh or 0.0)) >= 40.0:
             last_primary_sh = p_sh
             last_primary_sh_change_at = now
+
+    post_classifier_model_path = repo_root() / "app" / "worker" / "post_classifier" / "model.json"
+    post_classifier_kind = _read_json_kind(post_classifier_model_path)
+    post_classifier_deep_suggested_thr = (
+        _read_json_deep_suggested_threshold(post_classifier_model_path) if post_classifier_kind == "deep_rejector_v1" else None
+    )
+    _ai_raw = os.getenv("POST_CLASSIFIER_ENABLED", "")
+    explicit_ai: bool | None
+    if str(_ai_raw or "").strip() == "":
+        explicit_ai = None
+    else:
+        explicit_ai = _env_bool("POST_CLASSIFIER_ENABLED", default=False)
+
+    if explicit_ai is not None:
+        ai_enabled = bool(explicit_ai)
+    else:
+        # Auto-enable only for trained negative-only models. Avoid enabling legacy linear_v1 by default.
+        ai_enabled = post_classifier_kind in {"deep_rejector_v1", "hybrid_rejector_v1", "rejector_v1"}
+
+    ai_budget_s = _env_float("POST_CLASSIFIER_BUDGET_SEC", 3.5)
+    # Threshold meaning depends on model kind:
+    # - rejector kinds: threshold is "reject when similarity-to-negative >= threshold" (high -> safer)
+    # - binary kinds: threshold is "keep when P(positive) >= threshold"
+    if post_classifier_kind in {"deep_binary_v1", "linear_v1"}:
+        ai_thr = _env_float_optional("POST_CLASSIFIER_POS_THRESHOLD")
+        if ai_thr is None:
+            ai_thr = _env_float_optional("POST_CLASSIFIER_THRESHOLD")
+        ai_threshold = float(ai_thr) if ai_thr is not None else 0.60
+    else:
+        # reject-only default
+        ai_threshold_opt = _env_float_optional("POST_CLASSIFIER_REJECT_THRESHOLD")
+        if ai_threshold_opt is None:
+            ai_threshold_opt = _env_float_optional("POST_CLASSIFIER_THRESHOLD")
+        if ai_threshold_opt is None and post_classifier_deep_suggested_thr is not None:
+            ai_threshold = float(post_classifier_deep_suggested_thr)
+        else:
+            ai_threshold = float(ai_threshold_opt) if ai_threshold_opt is not None else 0.85
+    try:
+        if ai_enabled:
+            log(
+                "capture",
+                f"Post classifier ON (kind={post_classifier_kind or 'unknown'}, budget_s={ai_budget_s:.2f}, reject_threshold={ai_threshold:.2f})",
+            )
+        else:
+            log(
+                "capture",
+                "Post classifier OFF "
+                f"(set POST_CLASSIFIER_ENABLED=1 to force; auto enables when model.json kind is "
+                f"deep_binary/deep/hybrid/rejector; current kind={post_classifier_kind or 'missing'})",
+            )
+    except Exception:
+        pass
+
+    from app.worker.post_capture_decision import (
+        attempt_vlm_rescue_after_reject,
+        decide_post_capture,
+        mode_needs_media_struct,
+        mode_uses_dom_text,
+        public_config_snapshot,
+    )
+
+    try:
+        _gate_cfg = public_config_snapshot()
+        log(
+            "capture",
+            f"Post capture gates: mode={_gate_cfg.get('mode')} "
+            f"(image=ONNX if classifier on; text=keyword+sponsored when mode needs DOM)",
+        )
+    except Exception:
+        pass
+
     try:
         while True:
             _detect_checkpoint(page)
@@ -2766,6 +2941,117 @@ def capture_posts(
                     raise
                 log("capture", f"Post screenshot error (will retry): posinset={want_pos} err={e}", "WARN")
                 continue
+
+            # Multi-signal gate: vision (ONNX) + optional DOM text (keyword / sponsored) — see POST_CAPTURE_MODE.
+            dom_msg = ""
+            try:
+                if mode_uses_dom_text():
+                    dom_msg = _post_dom_message_preview(
+                        post,
+                        max_chars=int(float(os.getenv("POST_CAPTURE_DOM_PREVIEW_CHARS", "3200") or "3200")),
+                    )
+            except Exception:
+                dom_msg = ""
+
+            dom_media: dict = {}
+            try:
+                if mode_uses_dom_text() or mode_needs_media_struct():
+                    dom_media = _post_dom_media_flags(post)
+            except Exception:
+                dom_media = {}
+
+            res: dict | None = None
+            if ai_enabled:
+                try:
+                    from app.worker.post_classifier.model import classify_image
+
+                    res = classify_image(
+                        final_path,
+                        model_path=post_classifier_model_path,
+                        threshold=float(ai_threshold),
+                        budget_seconds=float(ai_budget_s),
+                    )
+                    try:
+                        auto_collect = _env_bool("POST_CLASSIFIER_AUTO_COLLECT", default=False)
+                        if auto_collect and res.get("ok") and res.get("score") is not None and res.get("threshold") is not None:
+                            sc = float(res.get("score") or 0.0)
+                            thr = float(res.get("threshold") or float(ai_threshold))
+                            margin = _env_float("POST_CLASSIFIER_AUTO_COLLECT_MARGIN", 0.06)
+                            if abs(sc - thr) <= float(margin):
+                                kind = str(res.get("kind") or post_classifier_kind or "").strip().lower()
+                                data_root = repo_root() / "post_classifier_data"
+                                dst_base = data_root / "_uncertain"
+                                if kind in {"deep_binary_v1", "linear_v1"}:
+                                    pred = "pos_like" if bool(res.get("is_positive")) else "neg_like"
+                                else:
+                                    pred = "keep_like" if bool(res.get("is_positive")) else "reject_like"
+                                dst_dir = dst_base / pred
+                                dst_dir.mkdir(parents=True, exist_ok=True)
+                                stamp = time.strftime("%Y%m%d-%H%M%S")
+                                dst = dst_dir / f"{stamp}_{final_path.name}"
+                                shutil.copy2(str(final_path), str(dst))
+                    except Exception:
+                        pass
+                except Exception as e:
+                    try:
+                        log("capture", f"AI classifier failed (ignored): {e}", "WARN")
+                    except Exception:
+                        pass
+
+            gate = decide_post_capture(
+                search_keyword=params.keyword,
+                dom_post_text=dom_msg,
+                classifier_result=res if isinstance(res, dict) else None,
+                ai_enabled=bool(ai_enabled),
+                dom_media=dom_media if dom_media else None,
+            )
+
+            still_discard = bool(gate.discard)
+            rescue_tr: dict = {}
+            if still_discard:
+                try:
+                    still_discard, rescue_tr = attempt_vlm_rescue_after_reject(
+                        discarded=gate,
+                        image_path=final_path,
+                        search_keyword=params.keyword,
+                        dom_post_text=dom_msg,
+                    )
+                    if rescue_tr.get("rescued"):
+                        try:
+                            log("capture", f"VLM rescue: kept {final_path.name} trace={rescue_tr}", "INFO")
+                        except Exception:
+                            pass
+                except Exception as ex:
+                    try:
+                        log("capture", f"VLM rescue failed (ignored): {ex}", "WARN")
+                    except Exception:
+                        pass
+
+            if still_discard:
+                rej_dir = out_dir / "_rejected"
+                rej_dir.mkdir(parents=True, exist_ok=True)
+                new_path = rej_dir / final_path.name
+                try:
+                    final_path.replace(new_path)
+                except Exception:
+                    new_path = final_path
+                try:
+                    log(
+                        "capture",
+                        f"Rejected by gates: {new_path.name} summary={gate.summary} trace={gate.trace} rescue={rescue_tr}",
+                        "WARN",
+                    )
+                except Exception:
+                    pass
+                _sleep_action(params, log=log, reason="after capture")
+                continue
+
+            try:
+                if isinstance(res, dict) and res.get("ok") and ai_enabled:
+                    sc = float(res.get("score") or 0.0)
+                    log("capture", f"Capture ok: {final_path.name} vision_score={sc:.3f} gate={gate.summary}")
+            except Exception:
+                pass
 
             saved += 1
             next_index += 1

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FB Posts Screenshot Tool</title>
-    <link rel="stylesheet" href="/assets/styles.css?v=18" />
+    <link rel="stylesheet" href="/assets/styles.css?v=19" />
   </head>
   <body>
     <div class="app">
@@ -39,6 +39,29 @@
         </div>
       </section>
       <div class="session-notice" id="sessionNotice" style="display:none"></div>
+
+      <section class="train-status" id="trainStatusSection" aria-label="Trạng thái train post classifier">
+        <div class="train-status-head">
+          <div class="train-status-title">Post classifier (train model)</div>
+          <div class="train-status-actions">
+            <button class="btn" id="trainNowBtn" type="button" title="Chạy train model ngay (không làm đơ UI)">Start train</button>
+            <span class="train-status-pill" id="trainRuntimePill">—</span>
+          </div>
+        </div>
+        <div class="train-status-grid" id="trainStatusBody">Đang tải…</div>
+      </section>
+
+      <section class="train-status" id="uncertainSection" aria-label="Dán nhãn ảnh uncertain">
+        <div class="train-status-head">
+          <div class="train-status-title">Active Learning (ảnh cần dán nhãn)</div>
+          <div class="train-status-actions">
+            <button class="btn" id="refreshUncertainBtn" type="button">Tải lại</button>
+            <span class="train-status-pill off" id="uncertainPill">—</span>
+          </div>
+        </div>
+        <div class="hint">Bật <code>POST_CLASSIFIER_AUTO_COLLECT=1</code> để tự gom ảnh “khó”. Ở đây bạn bấm Move → <code>positive</code>/<code>negative</code>, rồi bấm <b>Start train</b>.</div>
+        <div class="uncertain-grid" id="uncertainGrid"></div>
+      </section>
 
       <main class="grid">
         <section class="card">
@@ -194,7 +217,7 @@
       </footer>
     </div>
 
-    <script src="/assets/app.js?v=17"></script>
+    <script src="/assets/app.js?v=19"></script>
   </body>
 </html>
 

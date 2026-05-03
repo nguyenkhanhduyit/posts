@@ -1,0 +1,13 @@
+{
+  "phase": "skipped",
+  "finishedAt": "2026-05-02T13:37:33.881227+00:00",
+  "exitCode": 2,
+  "ok": false,
+  "message": "Chưa đủ ảnh: cần ≥20 positive và ≥20 negative.",
+  "positiveCount": 0,
+  "negativeCount": 0,
+  "positiveDir": "C:\\Users\\nguyenkhanhduyit\\Desktop\\Posts\\post_classifier_data\\positive",
+  "negativeDir": "C:\\Users\\nguyenkhanhduyit\\Desktop\\Posts\\post_classifier_data\\negative",
+  "durationMs": 2,
+  "updatedAt": "2026-05-02T13:37:33.881227+00:00"
+}
